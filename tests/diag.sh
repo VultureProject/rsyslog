@@ -592,6 +592,9 @@ startup_vg_waitpid_only() {
 	if [ "$RS_TESTBENCH_LEAK_CHECK" == "" ]; then
 		RS_TESTBENCH_LEAK_CHECK=full
 	fi
+	# add --keep-debuginfo=yes for hard to find cases; this cannot be used generally,
+	# because it is only supported by newer versions of valgrind (else CI will fail
+	# on older platforms).
 	LD_PRELOAD=$RSYSLOG_PRELOAD valgrind $RS_TEST_VALGRIND_EXTRA_OPTS $RS_TESTBENCH_VALGRIND_EXTRA_OPTS --suppressions=$srcdir/known_issues.supp ${EXTRA_VALGRIND_SUPPRESSIONS:-} --gen-suppressions=all --log-fd=1 --error-exitcode=10 --malloc-fill=ff --free-fill=fe --leak-check=$RS_TESTBENCH_LEAK_CHECK ../tools/rsyslogd -C -n -i$RSYSLOG_PIDBASE$2.pid -M../runtime/.libs:../.libs -f$CONF_FILE &
 	wait_rsyslog_startup_pid $1
 }
@@ -644,8 +647,9 @@ injectmsg() {
 
 # inject messages in INSTANCE 2 via our inject interface (imdiag)
 injectmsg2() {
-	echo injecting $2 messages
-	echo injectmsg "$1" "$2" $3 $4 | $TESTTOOL_DIR/diagtalker -p$IMDIAG_PORT2 || error_exit  $?
+	msgs=${2:-$NUMMESSAGES}
+	echo injecting $2 messages into instance 2
+	echo injectmsg "$1:-0" "$msgs" $3 $4 | $TESTTOOL_DIR/diagtalker -p$IMDIAG_PORT2 || error_exit  $?
 	# TODO: some return state checking? (does it really make sense here?)
 }
 
@@ -693,17 +697,29 @@ content_check() {
 	else
 		grep_opt=-F
 	fi
+	if [ "$1" == "--output-results" ]; then
+		output_results="yes"
+		shift
+	else
+		output_results="no"
+	fi
 	file=${2:-$RSYSLOG_OUT_LOG}
 	if ! grep -q  $grep_opt -- "$1" < "${file}"; then
 	    if [ "$check_only" == "yes" ]; then
 		printf 'content_check did not yet succeed\n'
-	    return 1
+		return 1
 	    fi
 	    printf '\n============================================================\n'
 	    printf 'FILE "%s" content:\n' "$file"
 	    cat -n ${file}
 	    printf 'FAIL: content_check failed to find "%s"\n' "$1"
 	    error_exit 1
+	else
+	    if [ "$output_results" == "yes" ]; then
+		# Output GREP results
+		echo "SUCCESS: content_check found results for '$1'\n"
+		grep "$1" "${file}"
+	    fi
 	fi
 	if [ "$check_only" == "yes" ]; then
 	    return 0
@@ -1605,17 +1621,17 @@ presort() {
 
 #START: ext kafka config
 #dep_cache_dir=$(readlink -f .dep_cache)
-export RS_ZK_DOWNLOAD=apache-zookeeper-3.6.2-bin.tar.gz
+export RS_ZK_DOWNLOAD=apache-zookeeper-3.6.3-bin.tar.gz
 dep_cache_dir=$(pwd)/.dep_cache
-dep_zk_url=https://downloads.apache.org/zookeeper/zookeeper-3.6.2/$RS_ZK_DOWNLOAD
+dep_zk_url=https://downloads.apache.org/zookeeper/zookeeper-3.6.3/$RS_ZK_DOWNLOAD
 dep_zk_cached_file=$dep_cache_dir/$RS_ZK_DOWNLOAD
 
-export RS_KAFKA_DOWNLOAD=kafka_2.12-2.7.0.tgz
-dep_kafka_url=http://www-us.apache.org/dist/kafka/2.7.0/kafka_2.12-2.7.0.tgz
+export RS_KAFKA_DOWNLOAD=kafka_2.13-2.8.0.tgz
+dep_kafka_url="https://www.rsyslog.com/files/download/rsyslog/$RS_KAFKA_DOWNLOAD"
 dep_kafka_cached_file=$dep_cache_dir/$RS_KAFKA_DOWNLOAD
 
 if [ -z "$ES_DOWNLOAD" ]; then
-	export ES_DOWNLOAD=elasticsearch-5.6.9.tar.gz
+	export ES_DOWNLOAD=elasticsearch-7.14.1-linux-x86_64.tar.gz #elasticsearch-5.6.9.tar.gz
 fi
 if [ -z "$ES_PORT" ]; then
 	export ES_PORT=19200
@@ -2148,11 +2164,15 @@ ensure_elasticsearch_ready() {
 		dep_es_cached_file="$dep_cache_dir/$ES_DOWNLOAD"
 		download_elasticsearch
 		prepare_elasticsearch
-		start_elasticsearch
-		printf '%s:%s:%s\n' "$ES_DOWNLOAD" "$ES_PORT" "$(cat es.pid)" > elasticsearch.running
+		if [ "$1" != "--no-start" ]; then
+			start_elasticsearch
+			printf '%s:%s:%s\n' "$ES_DOWNLOAD" "$ES_PORT" "$(cat es.pid)" > elasticsearch.running
+		fi
 	fi
-	printf 'running elasticsearch instance: %s\n' "$(cat elasticsearch.running)"
-	init_elasticsearch
+	if [ "$1" != "--no-start" ]; then
+		printf 'running elasticsearch instance: %s\n' "$(cat elasticsearch.running)"
+		init_elasticsearch
+	fi
 }
 
 
@@ -2169,7 +2189,7 @@ start_elasticsearch() {
 	# THIS IS THE ACTUAL START of ES
 	$dep_work_dir/es/bin/elasticsearch -p $dep_work_es_pidfile -d
 	$TESTTOOL_DIR/msleep 2000
-	# TODO: wait pidfile!
+	wait_startup_pid $dep_work_es_pidfile
 	printf 'elasticsearch pid is %s\n' "$(cat $dep_work_es_pidfile)"
 
 	# Wait for startup with hardcoded timeout
@@ -2196,6 +2216,8 @@ start_elasticsearch() {
 # $2 - ES port
 es_getdata() {
 	curl --silent -XPUT --show-error -H 'Content-Type: application/json' "http://localhost:${2:-$ES_PORT}/rsyslog_testbench/_settings" -d '{ "index" : { "max_result_window" : '${1:-$NUMMESSAGES}' } }'
+	# refresh to ensure we get the latest data
+	curl --silent localhost:${2:-$ES_PORT}/rsyslog_testbench/_refresh
 	curl --silent localhost:${2:-$ES_PORT}/rsyslog_testbench/_search?size=${1:-$NUMMESSAGES} > $RSYSLOG_DYNNAME.work
 	$PYTHON $srcdir/es_response_get_msgnum.py > ${RSYSLOG_OUT_LOG}
 }

@@ -239,6 +239,45 @@ finalize_it:
 	RETiRet;
 }
 
+static rsRetVal
+SetTlsCAFile(nsd_t __attribute__((unused)) *pNsd, const uchar *const pszFile)
+{
+	DEFiRet;
+	if(pszFile != NULL) {
+		LogError(0, RS_RET_VALUE_NOT_SUPPORTED, "error: CA File setting not supported by "
+				"ptcp netstream driver - value %s", pszFile);
+		ABORT_FINALIZE(RS_RET_VALUE_NOT_SUPPORTED);
+	}
+finalize_it:
+	RETiRet;
+}
+
+static rsRetVal
+SetTlsKeyFile(nsd_t __attribute__((unused)) *pNsd, const uchar *const pszFile)
+{
+	DEFiRet;
+	if(pszFile != NULL) {
+		LogError(0, RS_RET_VALUE_NOT_SUPPORTED, "error: TLS Key File setting not supported by "
+				"ptcp netstream driver");
+		ABORT_FINALIZE(RS_RET_VALUE_NOT_SUPPORTED);
+	}
+finalize_it:
+	RETiRet;
+}
+
+static rsRetVal
+SetTlsCertFile(nsd_t __attribute__((unused)) *pNsd, const uchar *const pszFile)
+{
+	DEFiRet;
+	if(pszFile != NULL) {
+		LogError(0, RS_RET_VALUE_NOT_SUPPORTED, "error: TLS Cert File setting not supported by "
+				"ptcp netstream driver");
+		ABORT_FINALIZE(RS_RET_VALUE_NOT_SUPPORTED);
+	}
+
+finalize_it:
+	RETiRet;
+}
 
 /* Set priorityString
  * PascalWithopf 2017-08-18 */
@@ -475,7 +514,7 @@ finalize_it:
  * rgerhards, 2008-04-22
  */
 static rsRetVal ATTR_NONNULL(1,3,5)
-LstnInit(netstrms_t *pNS, void *pUsr, rsRetVal(*fAddLstn)(void*,netstrm_t*),
+LstnInit(netstrms_t *const pNS, void *pUsr, rsRetVal(*fAddLstn)(void*,netstrm_t*),
 	 const int iSessMax, const tcpLstnParams_t *const cnf_params)
 {
 	DEFiRet;
@@ -509,7 +548,8 @@ LstnInit(netstrms_t *pNS, void *pUsr, rsRetVal(*fAddLstn)(void*,netstrm_t*),
 	error = getaddrinfo((const char*)cnf_params->pszAddr, (const char*) cnf_params->pszPort, &hints, &res);
 	if(error) {
 		LogError(0, RS_RET_INVALID_PORT, "error querying port '%s': %s",
-			cnf_params->pszAddr, gai_strerror(error));
+			(cnf_params->pszAddr == NULL) ? "**UNSPECIFIED**" : (const char*) cnf_params->pszAddr,
+			gai_strerror(error));
 		ABORT_FINALIZE(RS_RET_INVALID_PORT);
 	}
 
@@ -663,14 +703,20 @@ LstnInit(netstrms_t *pNS, void *pUsr, rsRetVal(*fAddLstn)(void*,netstrm_t*),
 		CHKiRet(pNS->Drvr.SetMode(pNewNsd, netstrms.GetDrvrMode(pNS)));
 		CHKiRet(pNS->Drvr.SetCheckExtendedKeyUsage(pNewNsd, netstrms.GetDrvrCheckExtendedKeyUsage(pNS)));
 		CHKiRet(pNS->Drvr.SetPrioritizeSAN(pNewNsd, netstrms.GetDrvrPrioritizeSAN(pNS)));
+		CHKiRet(pNS->Drvr.SetTlsCAFile(pNewNsd, netstrms.GetDrvrTlsCAFile(pNS)));
+		CHKiRet(pNS->Drvr.SetTlsKeyFile(pNewNsd, netstrms.GetDrvrTlsKeyFile(pNS)));
+		CHKiRet(pNS->Drvr.SetTlsCertFile(pNewNsd, netstrms.GetDrvrTlsCertFile(pNS)));
 		CHKiRet(pNS->Drvr.SetTlsVerifyDepth(pNewNsd, netstrms.GetDrvrTlsVerifyDepth(pNS)));
 		CHKiRet(pNS->Drvr.SetAuthMode(pNewNsd, netstrms.GetDrvrAuthMode(pNS)));
 		CHKiRet(pNS->Drvr.SetPermitExpiredCerts(pNewNsd, netstrms.GetDrvrPermitExpiredCerts(pNS)));
 		CHKiRet(pNS->Drvr.SetPermPeers(pNewNsd, netstrms.GetDrvrPermPeers(pNS)));
 		CHKiRet(pNS->Drvr.SetGnutlsPriorityString(pNewNsd, netstrms.GetDrvrGnutlsPriorityString(pNS)));
+
 		CHKiRet(netstrms.CreateStrm(pNS, &pNewStrm));
 		pNewStrm->pDrvrData = (nsd_t*) pNewNsd;
-		pNewNsd = NULL;
+		if(pNS->fLstnInitDrvr != NULL) {
+			CHKiRet(pNS->fLstnInitDrvr(pNewStrm));
+		}
 		CHKiRet(fAddLstn(pUsr, pNewStrm));
 		pNewStrm = NULL;
 		/* sock has been handed over by SetSock() above, so invalidate it here
@@ -699,7 +745,7 @@ finalize_it:
 	if(iRet != RS_RET_OK) {
 		if(pNewStrm != NULL)
 			netstrm.Destruct(&pNewStrm);
-		if(pNewNsd != NULL)
+		else if(pNewNsd != NULL)
 			pNS->Drvr.Destruct(&pNewNsd);
 	}
 
@@ -878,6 +924,11 @@ Connect(nsd_t *pNsd, int family, uchar *port, uchar *host, char *device)
 		ABORT_FINALIZE(RS_RET_IO_ERROR);
 	}
 
+	/* We need to copy Remote Hostname here for error logging purposes */
+	if((pThis->pRemHostName = malloc(strlen((char*)host)+1)) == NULL)
+		ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
+	memcpy(pThis->pRemHostName, host, strlen((char*)host)+1);
+
 	if((pThis->sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol)) == -1) {
 		LogError(errno, RS_RET_IO_ERROR, "cannot bind socket for %s:%s",
 			host, port);
@@ -1016,6 +1067,9 @@ CODESTARTobjQueryInterface(nsd_ptcp)
 	pIf->SetCheckExtendedKeyUsage = SetCheckExtendedKeyUsage;
 	pIf->SetPrioritizeSAN = SetPrioritizeSAN;
 	pIf->SetTlsVerifyDepth = SetTlsVerifyDepth;
+	pIf->SetTlsCAFile = SetTlsCAFile;
+	pIf->SetTlsKeyFile = SetTlsKeyFile;
+	pIf->SetTlsCertFile = SetTlsCertFile;
 finalize_it:
 ENDobjQueryInterface(nsd_ptcp)
 

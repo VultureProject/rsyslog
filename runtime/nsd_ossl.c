@@ -2,7 +2,7 @@
  *
  * An implementation of the nsd interface for OpenSSL.
  *
- * Copyright 2018-2019 Adiscon GmbH.
+ * Copyright 2018-2021 Adiscon GmbH.
  * Author: Andre Lorbach
  *
  * This file is part of the rsyslog runtime library.
@@ -46,6 +46,8 @@
 #include "stringbuf.h"
 #include "errmsg.h"
 #include "net.h"
+#include "netstrm.h"
+#include "netstrms.h"
 #include "datetime.h"
 #include "nsd_ptcp.h"
 #include "nsdsel_ossl.h"
@@ -78,18 +80,7 @@ DEFobjCurrIf(nsd_ptcp)
 	#define RSYSLOG_BIO_number_written(SSLBIO) SSLBIO->num
 #endif
 
-
-static int bGlblSrvrInitDone = 0;	/**< 0 - server global init not yet done, 1 - already done */
-
-/* Main OpenSSL CTX pointer */
-static SSL_CTX *ctx;
-
-/* Static Helper variables for CERT status */
-static short bHaveCA;
-static short bHaveCert;
-static short bHaveKey;
-static int bAnonInit;
-static MUTEX_TYPE anonInit_mut = PTHREAD_MUTEX_INITIALIZER;
+static rsRetVal applyGnutlsPriorityString(nsd_ossl_t *const pNsd);
 
 /*--------------------------------------MT OpenSSL helpers ------------------------------------------*/
 static MUTEX_TYPE *mutex_buf = NULL;
@@ -263,7 +254,7 @@ int verify_callback(int status, X509_STORE_CTX *store)
 					status = 1;
 				}
 				else /* also default - if (pThis->permitExpiredCerts == OSSL_EXPIRED_DENY)*/ {
-					LogError(0, RS_RET_NO_ERRCODE,
+					LogMsg(0, RS_RET_NO_ERRCODE, LOG_ERR,
 						"Certificate EXPIRED at depth: %d \n\t"
 						"issuer  = %s\n\t"
 						"subject = %s\n\t"
@@ -273,7 +264,7 @@ int verify_callback(int status, X509_STORE_CTX *store)
 				}
 			} else {
 				/* all other error codes cause failure */
-				LogError(0, RS_RET_NO_ERRCODE,
+				LogMsg(0, RS_RET_NO_ERRCODE, LOG_ERR,
 					"Certificate error at depth: %d \n\t"
 					"issuer  = %s\n\t"
 					"subject = %s\n\t"
@@ -414,7 +405,6 @@ osslGlblInit(void)
 {
 	DEFiRet;
 	DBGPRINTF("openssl: entering osslGlblInit\n");
-	const char *caFile, *certFile, *keyFile;
 
 	/* Setup OpenSSL library */
 	if((opensslh_THREAD_setup() == 0) || !SSL_library_init()) {
@@ -426,104 +416,8 @@ osslGlblInit(void)
 	ERR_load_BIO_strings();
 	ERR_load_crypto_strings();
 
-	/* Setup certificates */
-	caFile = (const char *) glbl.GetDfltNetstrmDrvrCAF();
-	if(caFile == NULL) {
-		LogMsg(0, RS_RET_CA_CERT_MISSING, LOG_WARNING,
-			"Warning: CA certificate is not set");
-		bHaveCA = 0;
-	} else {
-		bHaveCA	= 1;
-	}
-	certFile = (const char *) glbl.GetDfltNetstrmDrvrCertFile();
-	if(certFile == NULL) {
-		LogMsg(0, RS_RET_CERT_MISSING, LOG_WARNING,
-			"Warning: Certificate file is not set");
-		bHaveCert = 0;
-	} else {
-		bHaveCert = 1;
-	}
-	keyFile = (const char *) glbl.GetDfltNetstrmDrvrKeyFile();
-	if(keyFile == NULL) {
-		LogMsg(0, RS_RET_CERTKEY_MISSING, LOG_WARNING,
-			"Warning: Key file is not set");
-		bHaveKey = 0;
-	} else {
-		bHaveKey = 1;
-	}
-
-	/* Create main CTX Object */
-	ctx = SSL_CTX_new(SSLv23_method());
-	if(bHaveCA == 1 && SSL_CTX_load_verify_locations(ctx, caFile, NULL) != 1) {
-		LogError(0, RS_RET_TLS_CERT_ERR, "Error: CA certificate could not be accessed. "
-				"Check at least: 1) file path is correct, 2) file exist, "
-				"3) permissions are correct, 4) file content is correct. "
-				"Open ssl error info may follow in next messages");
-		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
-		ABORT_FINALIZE(RS_RET_TLS_CERT_ERR);
-	}
-	if(bHaveCert == 1 && SSL_CTX_use_certificate_chain_file(ctx, certFile) != 1) {
-		LogError(0, RS_RET_TLS_CERT_ERR, "Error: Certificate could not be accessed. "
-				"Check at least: 1) file path is correct, 2) file exist, "
-				"3) permissions are correct, 4) file content is correct. "
-				"Open ssl error info may follow in next messages");
-		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
-		ABORT_FINALIZE(RS_RET_TLS_CERT_ERR);
-	}
-	if(bHaveKey == 1 && SSL_CTX_use_PrivateKey_file(ctx, keyFile, SSL_FILETYPE_PEM) != 1) {
-		LogError(0, RS_RET_TLS_KEY_ERR , "Error: Key could not be accessed. "
-				"Check at least: 1) file path is correct, 2) file exist, "
-				"3) permissions are correct, 4) file content is correct. "
-				"Open ssl error info may follow in next messages");
-		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
-		ABORT_FINALIZE(RS_RET_TLS_KEY_ERR);
-	}
-
-	/* Set CTX Options */
-	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv2);		/* Disable insecure SSLv2 Protocol */
-	SSL_CTX_set_options(ctx, SSL_OP_NO_SSLv3);		/* Disable insecure SSLv3 Protocol */
-	SSL_CTX_sess_set_cache_size(ctx,1024);			/* TODO: make configurable? */
-
-	/* Set default VERIFY Options for OpenSSL CTX - and CALLBACK */
-	SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, verify_callback);
-
-	SSL_CTX_set_timeout(ctx, 30);	/* Default Session Timeout, TODO: Make configureable */
-	SSL_CTX_set_mode(ctx, SSL_MODE_AUTO_RETRY);
-
-	bGlblSrvrInitDone = 1;
-	/* Anon Ciphers will only be initialized when Authmode is set to ANON later */
-	bAnonInit = 0;
-finalize_it:
 	RETiRet;
 }
-
-/* Init Anon OpenSSL helpers */
-static rsRetVal
-osslAnonInit(void)
-{
-	DEFiRet;
-	pthread_mutex_lock(&anonInit_mut);
-	if (bAnonInit == 1) {
-		/* we are done */
-		FINALIZE;
-	}
-	dbgprintf("osslAnonInit Init Anon OpenSSL helpers\n");
-
-	#if OPENSSL_VERSION_NUMBER >= 0x10002000L
-	/* Enable Support for automatic EC temporary key parameter selection. */
-	SSL_CTX_set_ecdh_auto(ctx, 1);
-	#else
-	dbgprintf("osslAnonInit: openssl to old, cannot use SSL_CTX_set_ecdh_auto."
-		"Using SSL_CTX_set_tmp_ecdh with NID_X9_62_prime256v1/() instead.\n");
-	SSL_CTX_set_tmp_ecdh(ctx, EC_KEY_new_by_curve_name(NID_X9_62_prime256v1));
-	#endif
-
-	bAnonInit = 1;
-finalize_it:
-	pthread_mutex_unlock(&anonInit_mut);
-	RETiRet;
-}
-
 
 /* try to receive a record from the remote peer. This works with
  * our own abstraction and handles local buffering and EAGAIN.
@@ -609,14 +503,14 @@ finalize_it:
 }
 
 static rsRetVal
-osslInitSession(nsd_ossl_t *pThis) /* , nsd_ossl_t *pServer) */
+osslInitSession(nsd_ossl_t *pThis, osslSslState_t osslType) /* , nsd_ossl_t *pServer) */
 {
 	DEFiRet;
-	BIO *client;
+	BIO *conn;
 	char pristringBuf[4096];
 	nsd_ptcp_t *pPtcp = (nsd_ptcp_t*) pThis->pTcp;
 
-	if(!(pThis->ssl = SSL_new(ctx))) {
+	if(!(pThis->ssl = SSL_new(pThis->ctx))) {
 		pThis->ssl = NULL;
 		osslLastSSLErrorMsg(0, pThis->ssl, LOG_ERR, "osslInitSession");
 		ABORT_FINALIZE(RS_RET_NO_ERRCODE);
@@ -633,10 +527,8 @@ osslInitSession(nsd_ossl_t *pThis) /* , nsd_ossl_t *pServer) */
 		if (pThis->DrvrVerifyDepth != 0) {
 			SSL_set_verify_depth(pThis->ssl, pThis->DrvrVerifyDepth);
 		}
-	}
-
-	if (bAnonInit == 1) { /* no mutex needed, read-only after init */
-		/* Allow ANON Ciphers */
+	} else 	if (pThis->gnutlsPriorityString == NULL) {
+		/* Allow ANON Ciphers only in ANON Mode and if no custom priority string is defined */
 		#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
 		 /* NOTE: do never use: +eNULL, it DISABLES encryption! */
 		strncpy(pristringBuf, "ALL:+COMPLEMENTOFDEFAULT:+ADH:+ECDH:+aNULL@SECLEVEL=0",
@@ -654,20 +546,26 @@ osslInitSession(nsd_ossl_t *pThis) /* , nsd_ossl_t *pServer) */
 	}
 
 	/* Create BIO from ptcp socket! */
-	client = BIO_new_socket(pPtcp->sock, BIO_CLOSE /*BIO_NOCLOSE*/);
-	dbgprintf("osslInitSession: Init client BIO[%p] done\n", (void *)client);
+	conn = BIO_new_socket(pPtcp->sock, BIO_CLOSE /*BIO_NOCLOSE*/);
+	dbgprintf("osslInitSession: Init conn BIO[%p] done\n", (void *)conn);
 
-	/* Set debug Callback for client BIO as well! */
-	BIO_set_callback(client, BIO_debug_callback);
+	/* Set debug Callback for conn BIO as well! */
+	BIO_set_callback(conn, BIO_debug_callback);
 
-/* TODO: still needed? Set to NON blocking ! */
-BIO_set_nbio( client, 1 );
+	/* TODO: still needed? Set to NON blocking ! */
+	BIO_set_nbio( conn, 1 );
+	SSL_set_bio(pThis->ssl, conn, conn);
 
-	SSL_set_bio(pThis->ssl, client, client);
-	SSL_set_accept_state(pThis->ssl); /* sets ssl to work in server mode. */
-
+	if (osslType == osslServer) {
+		/* Server Socket */
+		SSL_set_accept_state(pThis->ssl); /* sets ssl to work in server mode. */
+		pThis->sslState = osslServer; /*set Server state */
+	} else {
+		/* Client Socket */
+		SSL_set_connect_state(pThis->ssl); /*sets ssl to work in client mode.*/
+		pThis->sslState = osslClient; /*set Client state */
+	}
 	pThis->bHaveSess = 1;
-	pThis->sslState = osslServer; /*set Server state */
 
 	/* we are done */
 	FINALIZE;
@@ -683,14 +581,15 @@ finalize_it:
 static rsRetVal
 osslChkPeerFingerprint(nsd_ossl_t *pThis, X509 *pCert)
 {
+	DEFiRet;
 	unsigned int n;
+	uchar *fromHostIP = NULL;
 	uchar fingerprint[20 /*EVP_MAX_MD_SIZE**/];
 	size_t size;
 	cstr_t *pstrFingerprint = NULL;
 	int bFoundPositiveMatch;
 	permittedPeers_t *pPeer;
 	const EVP_MD *fdig = EVP_sha1();
-	DEFiRet;
 
 	ISOBJ_TYPE_assert(pThis, nsd_ossl);
 
@@ -713,6 +612,7 @@ osslChkPeerFingerprint(nsd_ossl_t *pThis, X509 *pCert)
 			dbgprintf("osslChkPeerFingerprint: peer's certificate MATCH found: %s\n", pPeer->pszID);
 			bFoundPositiveMatch = 1;
 		} else {
+			dbgprintf("osslChkPeerFingerprint: NOMATCH peer certificate: %s\n", pPeer->pszID);
 			pPeer = pPeer->pNext;
 		}
 	}
@@ -720,18 +620,21 @@ osslChkPeerFingerprint(nsd_ossl_t *pThis, X509 *pCert)
 	if(!bFoundPositiveMatch) {
 		dbgprintf("osslChkPeerFingerprint: invalid peer fingerprint, not permitted to talk to it\n");
 		if(pThis->bReportAuthErr == 1) {
+			nsd_ptcp.GetRemoteHName((nsd_t*)pThis->pTcp, &fromHostIP);
 			errno = 0;
-			LogError(0, RS_RET_INVALID_FINGERPRINT,
-				"nsd_ossl:error: peer fingerprint '%s' unknown - we are "
-				"not permitted to talk to it", cstrGetSzStrNoNULL(pstrFingerprint));
-			LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO,
-				"nsd_ossl:TLS session terminated with remote syslog server.");
+			LogMsg(0, RS_RET_INVALID_FINGERPRINT, LOG_WARNING,
+				"nsd_ossl:TLS session terminated with remote syslog server '%s': "
+				"Fingerprint check failed, not permitted to talk to %s",
+				fromHostIP, cstrGetSzStrNoNULL(pstrFingerprint));
 			pThis->bReportAuthErr = 0;
 		}
 		ABORT_FINALIZE(RS_RET_INVALID_FINGERPRINT);
 	}
 
 finalize_it:
+	if (fromHostIP != NULL) {
+		free(fromHostIP);
+	}
 	if(pstrFingerprint != NULL)
 		cstrDestruct(&pstrFingerprint);
 	RETiRet;
@@ -750,9 +653,9 @@ static rsRetVal
 osslChkOnePeerName(nsd_ossl_t *pThis, X509 *pCert, uchar *pszPeerID, int *pbFoundPositiveMatch)
 {
 	permittedPeers_t *pPeer;
-	#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
 	int osslRet;
-	#endif
+#endif
 	char *x509name = NULL;
 	DEFiRet;
 
@@ -835,11 +738,10 @@ osslChkPeerName(nsd_ossl_t *pThis, X509 *pCert)
 		if(pThis->bReportAuthErr == 1) {
 			cstrFinalize(pStr);
 			errno = 0;
-			LogError(0, RS_RET_INVALID_FINGERPRINT, "nsd_ossl:error: peer name not authorized -  "
-				"not permitted to talk to it. Names: %s",
+			LogMsg(0, RS_RET_INVALID_FINGERPRINT, LOG_WARNING,
+				"nsd_ossl:TLS session terminated with remote syslog server: "
+				"peer name not authorized, not permitted to talk to %s",
 				cstrGetSzStrNoNULL(pStr));
-			LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO,
-				"nsd_ossl:TLS session terminated with remote syslog server.");
 			pThis->bReportAuthErr = 0;
 		}
 		ABORT_FINALIZE(RS_RET_INVALID_FINGERPRINT);
@@ -864,8 +766,9 @@ finalize_it:
 static rsRetVal
 osslChkPeerID(nsd_ossl_t *pThis)
 {
-	X509* certpeer;
 	DEFiRet;
+	X509* certpeer;
+	uchar *fromHostIP = NULL;
 
 	ISOBJ_TYPE_assert(pThis, nsd_ossl);
 
@@ -874,11 +777,11 @@ osslChkPeerID(nsd_ossl_t *pThis)
 	if ( certpeer == NULL ) {
 		if(pThis->bReportAuthErr == 1) {
 			errno = 0;
-			LogError(0, RS_RET_TLS_NO_CERT, "nsd_ossl:error: peer did not provide a certificate, "
-				"not permitted to talk to it");
 			pThis->bReportAuthErr = 0;
-			LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO,
-				"nsd_ossl:TLS session terminated with remote syslog server.");
+			nsd_ptcp.GetRemoteHName((nsd_t*)pThis->pTcp, &fromHostIP);
+			LogMsg(0, RS_RET_TLS_NO_CERT, LOG_WARNING,
+				"nsd_ossl:TLS session terminated with remote syslog server '%s': "
+				"Peer check failed, peer did not provide a certificate.", fromHostIP);
 		}
 		ABORT_FINALIZE(RS_RET_TLS_NO_CERT);
 	}
@@ -892,6 +795,9 @@ osslChkPeerID(nsd_ossl_t *pThis)
 	}
 
 finalize_it:
+	if (fromHostIP != NULL) {
+		free(fromHostIP);
+	}
 	RETiRet;
 }
 
@@ -903,36 +809,37 @@ osslChkPeerCertValidity(nsd_ossl_t *pThis)
 {
 	DEFiRet;
 	int iVerErr = X509_V_OK;
+	uchar *fromHostIP = NULL;
 
 	ISOBJ_TYPE_assert(pThis, nsd_ossl);
 
 	iVerErr = SSL_get_verify_result(pThis->ssl);
 	if (iVerErr != X509_V_OK) {
+		nsd_ptcp.GetRemoteHName((nsd_t*)pThis->pTcp, &fromHostIP);
 		if (iVerErr == X509_V_ERR_CERT_HAS_EXPIRED) {
 			if (pThis->permitExpiredCerts == OSSL_EXPIRED_DENY) {
-				LogError(0, RS_RET_CERT_EXPIRED,
-					"nsd_ossl:CertValidity check - not permitted to talk to peer: "
-					"certificate expired: %s",
-					X509_verify_cert_error_string(iVerErr));
-				LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO,
-					"nsd_ossl:TLS session terminated with remote syslog server.");
+				LogMsg(0, RS_RET_CERT_EXPIRED, LOG_INFO,
+					"nsd_ossl:TLS session terminated with remote syslog server '%s': "
+					"not permitted to talk to peer, "
+					"Certificate expired: %s",
+					fromHostIP, X509_verify_cert_error_string(iVerErr));
 				ABORT_FINALIZE(RS_RET_CERT_EXPIRED);
 			} else if (pThis->permitExpiredCerts == OSSL_EXPIRED_WARN) {
 				LogMsg(0, RS_RET_NO_ERRCODE, LOG_WARNING,
-					"nsd_ossl:CertValidity check - warning talking to peer: "
+					"nsd_ossl:CertValidity check - warning talking to peer '%s': "
 					"certificate expired: %s",
-					X509_verify_cert_error_string(iVerErr));
-				LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO,
-					"nsd_ossl:TLS session terminated with remote syslog server.");
+					fromHostIP, X509_verify_cert_error_string(iVerErr));
 			} else {
-				dbgprintf("osslChkPeerCertValidity: talking to peer: certificate expired: %s\n",
-					X509_verify_cert_error_string(iVerErr));
+				dbgprintf("osslChkPeerCertValidity: talking to peer '%s': "
+					"certificate expired: %s\n",
+					fromHostIP, X509_verify_cert_error_string(iVerErr));
 			}/* Else do nothing */
 		} else {
-			LogError(0, RS_RET_CERT_INVALID, "nsd_ossl:not permitted to talk to peer: "
-				"certificate validation failed: %s", X509_verify_cert_error_string(iVerErr));
-			LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO,
-				"nsd_ossl:TLS session terminated with remote syslog server.");
+			LogMsg(0, RS_RET_CERT_INVALID, LOG_INFO,
+				"nsd_ossl:TLS session terminated with remote syslog server '%s': "
+				"not permitted to talk to peer, "
+				"Certificate validation failed: %s",
+				fromHostIP, X509_verify_cert_error_string(iVerErr));
 			ABORT_FINALIZE(RS_RET_CERT_INVALID);
 		}
 	} else {
@@ -941,6 +848,9 @@ osslChkPeerCertValidity(nsd_ossl_t *pThis)
 	}
 
 finalize_it:
+	if (fromHostIP != NULL) {
+		free(fromHostIP);
+	}
 	RETiRet;
 }
 
@@ -987,7 +897,6 @@ osslGlblExit(void)
 {
 	DEFiRet;
 	DBGPRINTF("openssl: entering osslGlblExit\n");
-	SSL_CTX_free(ctx);
 	ENGINE_cleanup();
 	ERR_free_strings();
 	EVP_cleanup();
@@ -1004,6 +913,7 @@ static rsRetVal
 osslEndSess(nsd_ossl_t *pThis)
 {
 	DEFiRet;
+	uchar *fromHostIP = NULL;
 	int ret;
 	int err;
 
@@ -1011,6 +921,7 @@ osslEndSess(nsd_ossl_t *pThis)
 	if(pThis->bHaveSess) {
 		DBGPRINTF("osslEndSess: closing SSL Session ...\n");
 		ret = SSL_shutdown(pThis->ssl);
+		nsd_ptcp.GetRemoteHName((nsd_t*)pThis->pTcp, &fromHostIP);
 		if (ret <= 0) {
 			err = SSL_get_error(pThis->ssl, ret);
 			DBGPRINTF("osslEndSess: shutdown failed with err = %d\n", err);
@@ -1032,11 +943,11 @@ osslEndSess(nsd_ossl_t *pThis)
 			DBGPRINTF("osslEndSess: Forcing ssl shutdown SSL_read (%d) to do a bidirectional shutdown\n",
 				iBytesRet);
 			LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO, "nsd_ossl:"
-			"TLS session terminated with remote syslog server.");
+			"TLS session terminated with remote syslog server '%s': End Session", fromHostIP);
 			DBGPRINTF("osslEndSess: session closed (un)successfully \n");
 		} else {
 			LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO, "nsd_ossl:"
-			"TLS session terminated with remote syslog server.");
+			"TLS session terminated with remote syslog server '%s': End Session", fromHostIP);
 			DBGPRINTF("osslEndSess: session closed successfully \n");
 		}
 
@@ -1044,6 +955,9 @@ osslEndSess(nsd_ossl_t *pThis)
 		pThis->bHaveSess = 0;
 	}
 
+	if (fromHostIP != NULL) {
+		free(fromHostIP);
+	}
 	RETiRet;
 }
 /* ---------------------------- end OpenSSL specifics ---------------------------- */
@@ -1075,13 +989,14 @@ CODESTARTobjDestruct(nsd_ossl)
 		nsd_ptcp.Destruct(&pThis->pTcp);
 	}
 
-	if(pThis->pszConnectHost != NULL) {
-		free(pThis->pszConnectHost);
+	free(pThis->pszConnectHost);
+	free(pThis->pszRcvBuf);
+	if(pThis->ctx != NULL && !pThis->ctx_is_copy) {
+		SSL_CTX_free(pThis->ctx);
 	}
-
-	if(pThis->pszRcvBuf != NULL) {
-		free(pThis->pszRcvBuf);
-	}
+	free((void*) pThis->pszCAFile);
+	free((void*) pThis->pszKeyFile);
+	free((void*) pThis->pszCertFile);
 ENDobjDestruct(nsd_ossl)
 
 
@@ -1136,12 +1051,7 @@ SetAuthMode(nsd_t *const pNsd, uchar *const mode)
 		ABORT_FINALIZE(RS_RET_VALUE_NOT_SUPPORTED);
 	}
 
-		/* Init Anon OpenSSL stuff */
-		CHKiRet(osslAnonInit());
-
 	dbgprintf("SetAuthMode: Set Mode %s/%d\n", mode, pThis->authMode);
-
-/* TODO: clear stored IDs! */
 
 finalize_it:
 	RETiRet;
@@ -1300,6 +1210,116 @@ Abort(nsd_t *pNsd)
 }
 
 
+/* initialize openssl context; called on
+ * - listener creation
+ * - outbound connection creation
+ * Once created, the ctx object is used by-subobjects (accepted inbound connections)
+ */
+static rsRetVal
+osslInit_ctx(nsd_ossl_t *const pThis)
+{
+	DEFiRet;
+	int bHaveCA;
+	int bHaveCert;
+	int bHaveKey;
+	const char *caFile, *certFile, *keyFile;
+	/* Setup certificates */
+	caFile = (char*) ((pThis->pszCAFile == NULL) ? glbl.GetDfltNetstrmDrvrCAF() : pThis->pszCAFile);
+	if(caFile == NULL) {
+		LogMsg(0, RS_RET_CA_CERT_MISSING, LOG_WARNING,
+			"Warning: CA certificate is not set");
+		bHaveCA = 0;
+	} else {
+		bHaveCA	= 1;
+	}
+	certFile = (char*) ((pThis->pszCertFile == NULL) ? glbl.GetDfltNetstrmDrvrCertFile() : pThis->pszCertFile);
+	if(certFile == NULL) {
+		LogMsg(0, RS_RET_CERT_MISSING, LOG_WARNING,
+			"Warning: Certificate file is not set");
+		bHaveCert = 0;
+	} else {
+		bHaveCert = 1;
+	}
+	keyFile = (char*) ((pThis->pszKeyFile == NULL) ? glbl.GetDfltNetstrmDrvrKeyFile() : pThis->pszKeyFile);
+	if(keyFile == NULL) {
+		LogMsg(0, RS_RET_CERTKEY_MISSING, LOG_WARNING,
+			"Warning: Key file is not set");
+		bHaveKey = 0;
+	} else {
+		bHaveKey = 1;
+	}
+
+	/* Create main CTX Object */
+	pThis->ctx = SSL_CTX_new(SSLv23_method());
+	if(bHaveCA == 1 && SSL_CTX_load_verify_locations(pThis->ctx, caFile, NULL) != 1) {
+		LogError(0, RS_RET_TLS_CERT_ERR, "Error: CA certificate could not be accessed. "
+				"Check at least: 1) file path is correct, 2) file exist, "
+				"3) permissions are correct, 4) file content is correct. "
+				"Open ssl error info may follow in next messages");
+		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
+		ABORT_FINALIZE(RS_RET_TLS_CERT_ERR);
+	}
+	if(bHaveCert == 1 && SSL_CTX_use_certificate_chain_file(pThis->ctx, certFile) != 1) {
+		LogError(0, RS_RET_TLS_CERT_ERR, "Error: Certificate file could not be accessed. "
+				"Check at least: 1) file path is correct, 2) file exist, "
+				"3) permissions are correct, 4) file content is correct. "
+				"Open ssl error info may follow in next messages");
+		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
+		ABORT_FINALIZE(RS_RET_TLS_CERT_ERR);
+	}
+	if(bHaveKey == 1 && SSL_CTX_use_PrivateKey_file(pThis->ctx, keyFile, SSL_FILETYPE_PEM) != 1) {
+		LogError(0, RS_RET_TLS_KEY_ERR , "Error: Key could not be accessed. "
+				"Check at least: 1) file path is correct, 2) file exist, "
+				"3) permissions are correct, 4) file content is correct. "
+				"Open ssl error info may follow in next messages");
+		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
+		ABORT_FINALIZE(RS_RET_TLS_KEY_ERR);
+	}
+
+	/* Set CTX Options */
+	SSL_CTX_set_options(pThis->ctx, SSL_OP_NO_SSLv2);		/* Disable insecure SSLv2 Protocol */
+	SSL_CTX_set_options(pThis->ctx, SSL_OP_NO_SSLv3);		/* Disable insecure SSLv3 Protocol */
+	SSL_CTX_sess_set_cache_size(pThis->ctx,1024);			/* TODO: make configurable? */
+
+	/* Set default VERIFY Options for OpenSSL CTX - and CALLBACK */
+	SSL_CTX_set_verify(pThis->ctx, SSL_VERIFY_NONE, verify_callback);
+
+	SSL_CTX_set_timeout(pThis->ctx, 30);	/* Default Session Timeout, TODO: Make configureable */
+	SSL_CTX_set_mode(pThis->ctx, SSL_MODE_AUTO_RETRY);
+
+	applyGnutlsPriorityString(pThis);
+
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L
+#	if OPENSSL_VERSION_NUMBER <= 0x101010FFL
+	/* Enable Support for automatic EC temporary key parameter selection. */
+	SSL_CTX_set_ecdh_auto(pThis->ctx, 1);
+#	else
+	/*
+	* SSL_CTX_set_ecdh_auto and SSL_CTX_set_tmp_ecdh are depreceated in higher
+	* OpenSSL Versions, so we no more need them - see for more:
+	* https://www.openssl.org/docs/manmaster/man3/SSL_CTX_set_ecdh_auto.html
+	*/
+#	endif
+#else
+	dbgprintf("osslAnonInit: openssl to old, cannot use SSL_CTX_set_ecdh_auto."
+		"Using SSL_CTX_set_tmp_ecdh with NID_X9_62_prime256v1/() instead.\n");
+	SSL_CTX_set_tmp_ecdh(pThis->ctx, EC_KEY_new_by_curve_name(NID_X9_62_prime256v1));
+#endif
+finalize_it:
+	RETiRet;
+}
+
+
+/* Callback after netstrm obj init in nsd_ptcp - permits us to add some data */
+static rsRetVal
+LstnInitDrvr(netstrm_t *const pThis)
+{
+	DEFiRet;
+	CHKiRet(osslInit_ctx((nsd_ossl_t*) pThis->pDrvrData));
+finalize_it:
+	RETiRet;
+}
+
 
 /* initialize the tcp socket for a listner
  * Here, we use the ptcp driver - because there is nothing special
@@ -1315,6 +1335,7 @@ LstnInit(netstrms_t *pNS, void *pUsr, rsRetVal(*fAddLstn)(void*,netstrm_t*),
 	dbgprintf("LstnInit for openssl: entering LstnInit (%p) for %s:%s SessMax=%d\n",
 		fAddLstn, cnf_params->pszAddr, cnf_params->pszPort, iSessMax);
 
+	pNS->fLstnInitDrvr = LstnInitDrvr;
 	/* Init TCP Listener using base ptcp class */
 	iRet = nsd_ptcp.LstnInit(pNS, pUsr, fAddLstn, iSessMax, cnf_params);
 	RETiRet;
@@ -1394,8 +1415,9 @@ osslPostHandshakeCheck(nsd_ossl_t *pNsd)
 
 	#if OPENSSL_VERSION_NUMBER >= 0x10002000L
 	if(SSL_get_shared_curve(pNsd->ssl, -1) == 0) {
-		LogError(0, RS_RET_NO_ERRCODE, "nsd_ossl:"
-		"No shared curve between syslog client and server.");
+		// This is not a failure
+		LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO, "nsd_ossl: "
+		"Information, no shared curve between syslog client and server");
 	}
 	#endif
 	sslCipher = (const SSL_CIPHER*) SSL_get_current_cipher(pNsd->ssl);
@@ -1423,6 +1445,7 @@ rsRetVal
 osslHandshakeCheck(nsd_ossl_t *pNsd)
 {
 	DEFiRet;
+	uchar *fromHostIP = NULL;
 	int res, resErr;
 	dbgprintf("osslHandshakeCheck: Starting TLS Handshake for ssl[%p]\n", (void *)pNsd->ssl);
 
@@ -1430,6 +1453,7 @@ osslHandshakeCheck(nsd_ossl_t *pNsd)
 		/* Handle Server SSL Object */
 		if((res = SSL_accept(pNsd->ssl)) <= 0) {
 			/* Obtain SSL Error code */
+			nsd_ptcp.GetRemoteHName((nsd_t*)pNsd->pTcp, &fromHostIP);
 			resErr = SSL_get_error(pNsd->ssl, res);
 			if(	resErr == SSL_ERROR_WANT_READ ||
 				resErr == SSL_ERROR_WANT_WRITE) {
@@ -1442,9 +1466,15 @@ osslHandshakeCheck(nsd_ossl_t *pNsd)
 				dbgprintf("osslHandshakeCheck: OpenSSL Server handshake failed with SSL_ERROR_SYSCALL "
 					"- Aborting handshake.\n");
 				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_WARNING, "osslHandshakeCheck Server");
+				LogMsg(0, RS_RET_NO_ERRCODE, LOG_WARNING,
+					"nsd_ossl:TLS session terminated with remote client '%s': "
+					"Handshake failed with SSL_ERROR_SYSCALL", fromHostIP);
 				ABORT_FINALIZE(RS_RET_NO_ERRCODE);
 			} else {
 				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_ERR, "osslHandshakeCheck Server");
+				LogMsg(0, RS_RET_NO_ERRCODE, LOG_WARNING,
+					"nsd_ossl:TLS session terminated with remote client '%s': "
+					"Handshake failed with error code: %d", fromHostIP, resErr);
 				ABORT_FINALIZE(RS_RET_NO_ERRCODE);
 			}
 		}
@@ -1452,6 +1482,7 @@ osslHandshakeCheck(nsd_ossl_t *pNsd)
 		/* Handle Client SSL Object */
 		if((res = SSL_do_handshake(pNsd->ssl)) <= 0) {
 			/* Obtain SSL Error code */
+			nsd_ptcp.GetRemoteHName((nsd_t*)pNsd->pTcp, &fromHostIP);
 			resErr = SSL_get_error(pNsd->ssl, res);
 			if(	resErr == SSL_ERROR_WANT_READ ||
 				resErr == SSL_ERROR_WANT_WRITE) {
@@ -1467,8 +1498,9 @@ osslHandshakeCheck(nsd_ossl_t *pNsd)
 				ABORT_FINALIZE(RS_RET_NO_ERRCODE /*RS_RET_RETRY*/);
 			} else {
 				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_ERR, "osslHandshakeCheck Client");
-				LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO,
-					"nsd_ossl:TLS session terminated with remote syslog server.");
+				LogMsg(0, RS_RET_NO_ERRCODE, LOG_WARNING,
+					"nsd_ossl:TLS session terminated with remote syslog server '%s':"
+					"Handshake failed with error code: %d", fromHostIP, resErr);
 				ABORT_FINALIZE(RS_RET_NO_ERRCODE);
 			}
 		}
@@ -1480,6 +1512,9 @@ osslHandshakeCheck(nsd_ossl_t *pNsd)
 	/* Now check authorization */
 	CHKiRet(osslChkPeerAuth(pNsd));
 finalize_it:
+	if (fromHostIP != NULL) {
+		free(fromHostIP);
+	}
 	if(iRet == RS_RET_OK) {
 		/* If no error occured, set socket to SSL mode */
 		pNsd->iMode = 1;
@@ -1518,7 +1553,10 @@ AcceptConnReq(nsd_t *pNsd, nsd_t **ppNew)
 	pNew->permitExpiredCerts = pThis->permitExpiredCerts;
 	pNew->pPermPeers = pThis->pPermPeers;
 	pNew->DrvrVerifyDepth = pThis->DrvrVerifyDepth;
-	CHKiRet(osslInitSession(pNew));
+	pNew->gnutlsPriorityString = pThis->gnutlsPriorityString;
+	pNew->ctx = pThis->ctx;
+	pNew->ctx_is_copy = 1; // do not free on pNew Destruction
+	CHKiRet(osslInitSession(pNew, osslServer));
 
 	/* Store nsd_ossl_t* reference in SSL obj */
 	SSL_set_ex_data(pNew->ssl, 0, pThis);
@@ -1729,14 +1767,12 @@ Connect(nsd_t *pNsd, int family, uchar *port, uchar *host, char *device)
 	DEFiRet;
 	DBGPRINTF("openssl: entering Connect family=%d, device=%s\n", family, device);
 	nsd_ossl_t* pThis = (nsd_ossl_t*) pNsd;
-	nsd_ptcp_t* pPtcp = (nsd_ptcp_t*) pThis->pTcp;
-	BIO *conn;
-	char pristringBuf[4096];
 
 	ISOBJ_TYPE_assert(pThis, nsd_ossl);
 	assert(port != NULL);
 	assert(host != NULL);
 
+	CHKiRet(osslInit_ctx(pThis));
 	CHKiRet(nsd_ptcp.Connect(pThis->pTcp, family, port, host, device));
 
 	if(pThis->iMode == 0) {
@@ -1745,61 +1781,13 @@ Connect(nsd_t *pNsd, int family, uchar *port, uchar *host, char *device)
 		FINALIZE;
 	}
 
-	/* Create BIO from ptcp socket! */
-	conn = BIO_new_socket(pPtcp->sock, BIO_CLOSE /*BIO_NOCLOSE*/);
-	dbgprintf("Connect: Init conn BIO[%p] done\n", (void *)conn);
-
 	LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO, "nsd_ossl: "
 		"TLS Connection initiated with remote syslog server.");
 	/*if we reach this point we are in tls mode */
 	DBGPRINTF("Connect: TLS Mode\n");
-	if(!(pThis->ssl = SSL_new(ctx))) {
-		pThis->ssl = NULL;
-		osslLastSSLErrorMsg(0, pThis->ssl, LOG_ERR, "Connect");
-		ABORT_FINALIZE(RS_RET_NO_ERRCODE);
-	}
 
-	// Set SSL_MODE_AUTO_RETRY to SSL obj
-	SSL_set_mode(pThis->ssl, SSL_MODE_AUTO_RETRY);
-
-	if (pThis->authMode != OSSL_AUTH_CERTANON) {
-		dbgprintf("Connect: enable certificate checking (Mode=%d, VerifyDepth=%d)\n",
-			pThis->authMode, pThis->DrvrVerifyDepth);
-		/* Enable certificate valid checking */
-		SSL_set_verify(pThis->ssl, SSL_VERIFY_PEER|SSL_VERIFY_FAIL_IF_NO_PEER_CERT, verify_callback);
-		if (pThis->DrvrVerifyDepth != 0) {
-			SSL_set_verify_depth(pThis->ssl, pThis->DrvrVerifyDepth);
-		}
-	}
-
-	if (bAnonInit == 1) { /* no mutex needed, read-only after init */
-		/* Allow ANON Ciphers */
-		#if OPENSSL_VERSION_NUMBER >= 0x10100000L && !defined(LIBRESSL_VERSION_NUMBER)
-		 /* NOTE: do never use: +eNULL, it DISABLES encryption! */
-		strncpy(pristringBuf, "ALL:+COMPLEMENTOFDEFAULT:+ADH:+ECDH:+aNULL@SECLEVEL=0",
-			sizeof(pristringBuf));
-		#else
-		strncpy(pristringBuf, "ALL:+COMPLEMENTOFDEFAULT:+ADH:+ECDH:+aNULL",
-			sizeof(pristringBuf));
-		#endif
-
-		dbgprintf("Connect: setting anon ciphers: %s\n", pristringBuf);
-		if ( SSL_set_cipher_list(pThis->ssl, pristringBuf) == 0 ){
-			dbgprintf("Connect: Error setting ciphers '%s'\n", pristringBuf);
-			ABORT_FINALIZE(RS_RET_SYS_ERR);
-		}
-	}
-
-	/* Set debug Callback for client BIO as well! */
-	BIO_set_callback(conn, BIO_debug_callback);
-
-/* TODO: still needed? Set to NON blocking ! */
-BIO_set_nbio( conn, 1 );
-
-	SSL_set_bio(pThis->ssl, conn, conn);
-	SSL_set_connect_state(pThis->ssl); /*sets ssl to work in client mode.*/
-	pThis->sslState = osslClient; /*set Client state */
-	pThis->bHaveSess = 1;
+	/* Do SSL Session init */
+	CHKiRet(osslInitSession(pThis, osslClient));
 
 	/* Store nsd_ossl_t* reference in SSL obj */
 	SSL_set_ex_data(pThis->ssl, 0, pThis);
@@ -1820,7 +1808,6 @@ finalize_it:
 	RETiRet;
 }
 
-
 static rsRetVal
 SetGnutlsPriorityString(nsd_t *const pNsd, uchar *const gnutlsPriorityString)
 {
@@ -1828,14 +1815,49 @@ SetGnutlsPriorityString(nsd_t *const pNsd, uchar *const gnutlsPriorityString)
 	nsd_ossl_t* pThis = (nsd_ossl_t*) pNsd;
 	ISOBJ_TYPE_assert(pThis, nsd_ossl);
 
-	pThis->gnutlsPriorityString = gnutlsPriorityString;
-
-	/* Skip function if function is NULL gnutlsPriorityString */
-	if (gnutlsPriorityString == NULL) {
-		RETiRet;
-	} else {
-		dbgprintf("gnutlsPriorityString: set to '%s'\n", gnutlsPriorityString);
 #if OPENSSL_VERSION_NUMBER >= 0x10002000L && !defined(LIBRESSL_VERSION_NUMBER)
+	sbool ApplySettings = 0;
+	if (	(gnutlsPriorityString != NULL && pThis->gnutlsPriorityString == NULL) ||
+		(gnutlsPriorityString != NULL &&
+		strcmp( (const char*)pThis->gnutlsPriorityString, (const char*)gnutlsPriorityString) != 0)
+		) {
+		ApplySettings = 1;
+	}
+
+	pThis->gnutlsPriorityString = gnutlsPriorityString;
+	dbgprintf("gnutlsPriorityString: set to '%s' Apply %s\n",
+		(gnutlsPriorityString != NULL ? (char*)gnutlsPriorityString : "NULL"),
+		(ApplySettings == 1? "TRUE" : "FALSE"));
+	if (ApplySettings == 1) {
+		/* Apply Settings if necessary */
+		applyGnutlsPriorityString(pThis);
+	}
+
+#else
+	LogError(0, RS_RET_SYS_ERR, "Warning: TLS library does not support SSL_CONF_cmd API"
+		"(maybe it is too old?). Cannot use gnutlsPriorityString ('%s'). For more see: "
+		"https://www.rsyslog.com/doc/master/configuration/modules/imtcp.html#gnutlsprioritystring",
+		gnutlsPriorityString);
+#endif
+	RETiRet;
+}
+
+
+static rsRetVal
+applyGnutlsPriorityString(nsd_ossl_t *const pThis)
+{
+	DEFiRet;
+	ISOBJ_TYPE_assert(pThis, nsd_ossl);
+
+#if OPENSSL_VERSION_NUMBER >= 0x10002000L && !defined(LIBRESSL_VERSION_NUMBER)
+	/* Note: we disable unkonwn functions. The corresponding error message is
+	 * generated during SetGntuTLSPriorityString().
+	 */
+
+	if(pThis->gnutlsPriorityString == NULL || pThis->ctx == NULL) {
+		FINALIZE;
+	} else {
+		dbgprintf("applying gnutlsPriorityString: '%s'\n", pThis->gnutlsPriorityString);
 		char *pCurrentPos;
 		char *pNextPos;
 		char *pszCmd;
@@ -1855,7 +1877,7 @@ SetGnutlsPriorityString(nsd_t *const pNsd, uchar *const gnutlsPriorityString)
 			}
 			SSL_CONF_CTX_set_flags(cctx, SSL_CONF_FLAG_FILE);
 			SSL_CONF_CTX_set_flags(cctx, SSL_CONF_FLAG_SHOW_ERRORS);
-			SSL_CONF_CTX_set_ssl_ctx(cctx, ctx);
+			SSL_CONF_CTX_set_ssl_ctx(cctx, pThis->ctx);
 
 			do
 			{
@@ -1904,15 +1926,10 @@ SetGnutlsPriorityString(nsd_t *const pNsd, uchar *const gnutlsPriorityString)
 			}
 			SSL_CONF_CTX_free(cctx);
 		}
-#else
-		dbgprintf("gnutlsPriorityString: set to '%s'\n", gnutlsPriorityString);
-		LogError(0, RS_RET_SYS_ERR, "Warning: TLS library does not support SSL_CONF_cmd API"
-			"(maybe it is too old?). Cannot use gnutlsPriorityString ('%s'). For more see: "
-			"https://www.rsyslog.com/doc/master/configuration/modules/imtcp.html#gnutlsprioritystring",
-			gnutlsPriorityString);
-#endif
 	}
+#endif
 
+finalize_it:
 	RETiRet;
 }
 
@@ -1971,6 +1988,58 @@ finalize_it:
 }
 
 
+static rsRetVal
+SetTlsCAFile(nsd_t *pNsd, const uchar *const caFile)
+{
+	DEFiRet;
+	nsd_ossl_t *const pThis = (nsd_ossl_t*) pNsd;
+
+	ISOBJ_TYPE_assert((pThis), nsd_ossl);
+	if(caFile == NULL) {
+		pThis->pszCAFile = NULL;
+	} else {
+		CHKmalloc(pThis->pszCAFile = (const uchar*) strdup((const char*) caFile));
+	}
+
+finalize_it:
+	RETiRet;
+}
+
+static rsRetVal
+SetTlsKeyFile(nsd_t *pNsd, const uchar *const pszFile)
+{
+	DEFiRet;
+	nsd_ossl_t *const pThis = (nsd_ossl_t*) pNsd;
+
+	ISOBJ_TYPE_assert((pThis), nsd_ossl);
+	if(pszFile == NULL) {
+		pThis->pszKeyFile = NULL;
+	} else {
+		CHKmalloc(pThis->pszKeyFile = (const uchar*) strdup((const char*) pszFile));
+	}
+
+finalize_it:
+	RETiRet;
+}
+
+static rsRetVal
+SetTlsCertFile(nsd_t *pNsd, const uchar *const pszFile)
+{
+	DEFiRet;
+	nsd_ossl_t *const pThis = (nsd_ossl_t*) pNsd;
+
+	ISOBJ_TYPE_assert((pThis), nsd_ossl);
+	if(pszFile == NULL) {
+		pThis->pszCertFile = NULL;
+	} else {
+		CHKmalloc(pThis->pszCertFile = (const uchar*) strdup((const char*) pszFile));
+	}
+
+finalize_it:
+	RETiRet;
+}
+
+
 /* queryInterface function */
 BEGINobjQueryInterface(nsd_ossl)
 CODESTARTobjQueryInterface(nsd_ossl)
@@ -2008,6 +2077,9 @@ CODESTARTobjQueryInterface(nsd_ossl)
 	pIf->SetCheckExtendedKeyUsage = SetCheckExtendedKeyUsage; /* we don't NEED this interface! */
 	pIf->SetPrioritizeSAN = SetPrioritizeSAN; /* we don't NEED this interface! */
 	pIf->SetTlsVerifyDepth = SetTlsVerifyDepth;
+	pIf->SetTlsCAFile = SetTlsCAFile;
+	pIf->SetTlsKeyFile = SetTlsKeyFile;
+	pIf->SetTlsCertFile = SetTlsCertFile;
 
 finalize_it:
 ENDobjQueryInterface(nsd_ossl)

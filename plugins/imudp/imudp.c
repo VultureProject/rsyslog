@@ -308,19 +308,40 @@ addListner(instanceConf_t *inst)
 		/* we now need to add the new sockets to the existing set */
 		/* ready to copy */
 		for(iSrc = 1 ; iSrc <= newSocks[0] ; ++iSrc) {
+			struct sockaddr_in sa;
+			socklen_t salen = sizeof(sa);
+			const char *suffix;
 			CHKmalloc(newlcnfinfo = (struct lstn_s*) calloc(1, sizeof(struct lstn_s)));
 			newlcnfinfo->next = NULL;
 			newlcnfinfo->sock = newSocks[iSrc];
 			newlcnfinfo->pRuleset = inst->pBindRuleset;
 			newlcnfinfo->dfltTZ = inst->dfltTZ;
+			newlcnfinfo->ratelimiter = NULL;
+			/* query socket IPv4 vs IPv6 */
+			sa.sin_family = 0; /* just to keep CLANG static analyzer happy! */
+			if(getsockname(newlcnfinfo->sock, (struct sockaddr*) &sa, &salen) != 0) {
+				suffix = "error_getting_AF...";
+			} else {
+				if(sa.sin_family == AF_INET) {
+					suffix = "IPv4";
+				} else if(sa.sin_family == AF_INET6) {
+					suffix = "IPv6";
+				} else {
+					suffix = "AF_unknown";
+				}
+			}
 			if(inst->inputname == NULL) {
 				inputname = (uchar*)"imudp";
 			} else {
 				inputname = inst->inputname;
 			}
-			snprintf((char*)dispname, sizeof(dispname), "%s(%s:%s)", inputname, bindName, port);
+			snprintf((char*)dispname, sizeof(dispname), "%s(%s/%s/%s)",
+				inputname, bindName, port, suffix);
 			dispname[sizeof(dispname)-1] = '\0'; /* just to be on the save side... */
 			CHKiRet(ratelimitNew(&newlcnfinfo->ratelimiter, (char*)dispname, NULL));
+			ratelimitSetLinuxLike(newlcnfinfo->ratelimiter, inst->ratelimitInterval,
+					      inst->ratelimitBurst);
+			ratelimitSetThreadSafe(newlcnfinfo->ratelimiter);
 			if(inst->bAppendPortToInpname) {
 				snprintf((char*)inpnameBuf, sizeof(inpnameBuf), "%s%s",
 					inputname, port);
@@ -331,9 +352,6 @@ addListner(instanceConf_t *inst)
 			CHKiRet(prop.SetString(newlcnfinfo->pInputName,
 				inputname, ustrlen(inputname)));
 			CHKiRet(prop.ConstructFinalize(newlcnfinfo->pInputName));
-			ratelimitSetLinuxLike(newlcnfinfo->ratelimiter, inst->ratelimitInterval,
-					      inst->ratelimitBurst);
-			ratelimitSetThreadSafe(newlcnfinfo->ratelimiter);
 			/* support statistics gathering */
 			CHKiRet(statsobj.Construct(&(newlcnfinfo->stats)));
 			CHKiRet(statsobj.SetName(newlcnfinfo->stats, dispname));

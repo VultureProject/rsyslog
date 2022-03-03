@@ -64,9 +64,14 @@ TESTS +=  \
 TESTS +=  \
 	es-basic.sh \
 	es-basic-es6.0.sh \
+	es-basic-es7.14.sh \
 	es-basic-bulk.sh
-es-basic-es6.0.log: es-basic.log
+#es-basic-es6.0.log:  es-basic.log
+#es-basic-es7.14.log: es-basic-es6.0.log
+es-basic-es7.14.log: es-basic.log
+es-basic-es6.0.log:  es-basic-es7.14.log
 es-basic-bulk.log: es-basic-es6.0.log
+#es-basic-bulk.log: es-basic-es7.14.log
 es-basic-server.log: es-basic-bulk.log
 
 # special "test" for stopping ES once all ES tests are done
@@ -215,10 +220,16 @@ TESTS +=  \
 	msgvar-concurrency.sh \
 	localvar-concurrency.sh \
 	exec_tpl-concurrency.sh \
+	rscript_privdropuser.sh \
+	rscript_privdropuserid.sh \
+	rscript_privdropgroup.sh \
+	rscript_privdropgroupid.sh \
 	privdropuser.sh \
 	privdropuserid.sh \
 	privdropgroup.sh \
 	privdropgroupid.sh \
+	privdropabortonidfail.sh \
+	privdropabortonidfaillegacy.sh \
 	json-nonstring.sh \
 	template-json.sh \
 	template-pure-json.sh \
@@ -268,6 +279,7 @@ TESTS +=  \
 	msgdup.sh \
 	msgdup_props.sh \
 	empty-ruleset.sh \
+	ruleset-direct-queue.sh \
 	imtcp-listen-port-file-2.sh \
 	allowed-sender-tcp-ok.sh \
 	allowed-sender-tcp-fail.sh \
@@ -359,6 +371,7 @@ TESTS +=  \
 	dircreate_off.sh \
 	imuxsock_legacy.sh \
 	imuxsock_logger.sh \
+	imuxsock_logger_ratelimit.sh \
 	imuxsock_logger_ruleset.sh \
 	imuxsock_logger_ruleset_ratelimit.sh \
 	imuxsock_logger_err.sh \
@@ -582,6 +595,7 @@ TESTS +=  \
 	mmanon_zero_64_ipv6.sh \
 	mmanon_both_modes_compatible.sh \
 	mmanon_recognize_ipembedded.sh \
+	mmanon_ipv6_port.sh \
 	mmanon_random_cons_128_ipembedded.sh
 endif # if ENABLE_MMANON
 
@@ -952,6 +966,8 @@ endif # ENABLE_IMDOCKER
 if ENABLE_IMHTTP
 TESTS += \
 	imhttp-post-payload.sh \
+	imhttp-post-payload-basic-auth.sh \
+	imhttp-post-payload-query-params.sh \
 	imhttp-post-payload-large.sh \
 	imhttp-post-payload-multi.sh \
 	imhttp-post-payload-multi-lf.sh \
@@ -960,6 +976,8 @@ TESTS += \
 if HAVE_VALGRIND
 TESTS +=  \
 	imhttp-post-payload-vg.sh \
+	imhttp-post-payload-basic-auth-vg.sh \
+	imhttp-post-payload-query-params-vg.sh \
 	imhttp-post-payload-large-vg.sh \
 	imhttp-post-payload-multi-vg.sh \
 	imhttp-post-payload-multi-lf-vg.sh \
@@ -1000,6 +1018,7 @@ endif # ENABLE_OMRABBITMQ
 if ENABLE_IMPSTATS
 TESTS +=  \
 	impstats-hup.sh \
+	perctile-simple.sh \
 	dynstats.sh \
 	dynstats_overflow.sh \
 	dynstats_reset.sh \
@@ -1013,10 +1032,12 @@ TESTS +=  \
 	stats-json-es.sh \
 	dynstats_reset_without_pstats_reset.sh \
 	dynstats_prevent_premature_eviction.sh \
+	omfwd_fast_imuxsock.sh \
 	omfwd_impstats-udp.sh \
 	omfwd_impstats-tcp.sh
 if HAVE_VALGRIND
 TESTS +=  \
+	perctile-simple-vg.sh \
 	dynstats-vg.sh \
 	dynstats_reset-vg.sh \
 	dynstats_overflow-vg.sh \
@@ -1087,6 +1108,42 @@ TESTS +=  \
 	rscript_unflatten_object_exclamation-vg.sh
 endif # HAVE_VALGRIND
 endif # ENABLE_FMUNFLATTEN
+if ENABLE_FFAUP
+TESTS +=  \
+	rscript_faup_all.sh \
+	rscript_faup_all_2.sh \
+	rscript_faup_all_empty.sh \
+	rscript_faup_scheme.sh \
+	rscript_faup_credential.sh \
+	rscript_faup_subdomain.sh \
+	rscript_faup_domain.sh \
+	rscript_faup_domain_without_tld.sh \
+	rscript_faup_host.sh \
+	rscript_faup_tld.sh \
+	rscript_faup_port.sh \
+	rscript_faup_resource_path.sh \
+	rscript_faup_query_string.sh \
+	rscript_faup_fragment.sh \
+	rscript_faup_mozilla_tld.sh
+if HAVE_VALGRIND
+TESTS +=  \
+	rscript_faup_all_vg.sh \
+	rscript_faup_all_2_vg.sh \
+	rscript_faup_all_empty_vg.sh \
+	rscript_faup_scheme_vg.sh \
+	rscript_faup_credential_vg.sh \
+	rscript_faup_subdomain_vg.sh \
+	rscript_faup_domain_vg.sh \
+	rscript_faup_domain_without_tld_vg.sh \
+	rscript_faup_host_vg.sh \
+	rscript_faup_tld_vg.sh \
+	rscript_faup_port_vg.sh \
+	rscript_faup_resource_path_vg.sh \
+	rscript_faup_query_string_vg.sh \
+	rscript_faup_fragment_vg.sh \
+	rscript_faup_mozilla_tld_vg.sh
+endif # HAVE_VALGRIND
+endif # ENABLE_FFAUP
 endif
 
 if ENABLE_MMPSTRUCDATA
@@ -1219,6 +1276,8 @@ endif
 if ENABLE_GNUTLS_TESTS
 TESTS +=  \
 	imtcp-tls-basic.sh \
+	imtcp-tls-input-basic.sh \
+	imtcp-tls-input-2certs.sh \
 	imtcp-tls-basic-verifydepth.sh \
 	imtcp_conndrop_tls.sh \
 	sndrcv_tls_anon_rebind.sh \
@@ -1231,12 +1290,15 @@ TESTS +=  \
 	sndrcv_tls_gtls_serveranon_gtls_clientanon.sh \
 	sndrcv_tls_priorityString.sh \
 	sndrcv_tls_certvalid.sh \
+	sndrcv_tls_certvalid_action_level.sh \
 	sndrcv_tls_certvalid_expired.sh \
 	sndrcv_tls_certvalid_expired_defaultmode.sh \
+	imtcp-tls-no-lstn-startup.sh \
 	imtcp-tls-gtls-x509fingerprint-invld.sh \
 	imtcp-tls-gtls-x509fingerprint.sh \
 	imtcp-tls-gtls-x509name-invld.sh \
 	imtcp-tls-gtls-x509name.sh \
+	imtcp-tls-gtls-x509name-legacy.sh \
 	imtcp-drvr-in-input-basic.sh \
 	imtcp-multi-drvr-basic.sh \
 	imtcp-multi-drvr-basic-parallel.sh
@@ -1255,17 +1317,22 @@ endif
 if ENABLE_OPENSSL
 TESTS +=  \
 	imtcp-tls-ossl-basic.sh \
+	imtcp-tls-ossl-input-basic.sh \
+	imtcp-tls-ossl-input-2certs.sh \
 	imtcp-tls-ossl-basic-tlscommands.sh \
 	imtcp-tls-ossl-basic-verifydepth.sh \
 	imtcp-tls-ossl-invalid-verifydepth.sh \
 	sndrcv_tls_ossl_anon_ipv4.sh \
 	sndrcv_tls_ossl_anon_ipv6.sh \
 	sndrcv_tls_ossl_anon_rebind.sh \
+	sndrcv_tls_ossl_anon_ciphers.sh \
 	sndrcv_tls_ossl_serveranon_ossl_clientanon.sh \
 	sndrcv_tls_ossl_servercert_ossl_clientanon.sh \
 	sndrcv_tls_ossl_certvalid.sh \
+	sndrcv_tls_ossl_certvalid_action_level.sh \
 	sndrcv_tls_ossl_certvalid_expired.sh \
 	sndrcv_tls_ossl_certvalid_tlscommand.sh \
+	sndrcv_tls_ossl_certvalid_ciphers.sh \
 	imtcp-tls-ossl-x509valid.sh \
 	imtcp-tls-ossl-x509name.sh \
 	imtcp-tls-ossl-x509fingerprint.sh \
@@ -1317,6 +1384,7 @@ if ENABLE_GNUTLS
 TESTS += \
          sndrcv_relp_tls.sh \
          sndrcv_relp_tls_certvalid.sh \
+	 sndrcv_tls_certvalid_action_level.sh \
          sndrcv_relp_tls_prio.sh \
 	 sndrcv_relp_tls_chainedcert.sh \
          relp_tls_certificate_not_found.sh \
@@ -1441,6 +1509,8 @@ TESTS += \
 	imfile-statefile-no-file_id.sh \
 	imfile-statefile-no-file_id-TO-file_id.sh \
 	imfile-statefile-directory.sh \
+	imfile-statefile-delete.sh \
+	imfile-statefile-no-delete.sh \
 	imfile-persist-state-1.sh \
 	imfile-freshStartTail1.sh \
 	imfile-freshStartTail2.sh \
@@ -1464,6 +1534,13 @@ TESTS += \
 	imfile-logrotate-copytruncate.sh \
 	imfile-logrotate-nocopytruncate.sh \
 	imfile-growing-file-id.sh \
+	imfile-ignore-old-file-1.sh \
+	imfile-ignore-old-file-2.sh \
+	imfile-ignore-old-file-3.sh \
+	imfile-ignore-old-file-4.sh \
+	imfile-ignore-old-file-5.sh \
+	imfile-ignore-old-file-6.sh \
+	imfile-ignore-old-file-7.sh \
 	glbl-oversizeMsg-truncate-imfile.sh \
 	config_enabled-on.sh \
 	config_enabled-off.sh
@@ -1841,6 +1918,7 @@ EXTRA_DIST= \
 	mmanon_zero_64_ipv6.sh \
 	mmanon_both_modes_compatible.sh \
 	mmanon_recognize_ipembedded.sh \
+	mmanon_ipv6_port.sh \
 	mmanon_random_cons_128_ipembedded.sh \
 	rscript_eq.sh \
 	rscript_eq_var.sh \
@@ -1851,6 +1929,7 @@ EXTRA_DIST= \
 	stop-msgvar.sh \
 	omfwd-tls-invalid-permitExpiredCerts.sh \
 	omfwd-keepalive.sh \
+	omfwd_fast_imuxsock.sh \
 	omfile_hup-vg.sh \
 	gzipwr_hup-vg.sh \
 	omusrmsg-noabort-legacy.sh \
@@ -1898,11 +1977,17 @@ EXTRA_DIST= \
 	prop-programname.sh \
 	prop-programname-with-slashes.sh \
 	rfc5424parser.sh \
+	rscript_privdropuser.sh \
+	rscript_privdropuserid.sh \
+	rscript_privdropgroup.sh \
+	rscript_privdropgroupid.sh \
 	privdrop_common.sh \
 	privdropuser.sh \
 	privdropuserid.sh \
 	privdropgroup.sh \
 	privdropgroupid.sh \
+	privdropabortonidfail.sh \
+	privdropabortonidfaillegacy.sh \
 	json-nonstring.sh \
 	template-json.sh \
 	template-pure-json.sh \
@@ -2036,6 +2121,7 @@ EXTRA_DIST= \
 	es-duplicated-ruleset.sh \
 	es-duplicated-ruleset-vg.sh \
 	es-basic-es6.0.sh \
+	es-basic-es7.14.sh \
 	es-basic.sh \
 	es-basic-vgthread.sh \
 	es-basic-server.sh \
@@ -2063,6 +2149,7 @@ EXTRA_DIST= \
 	msgdup.sh \
 	msgdup_props.sh \
 	empty-ruleset.sh \
+	ruleset-direct-queue.sh \
 	imtcp-listen-port-file-2.sh \
 	allowed-sender-tcp-ok.sh \
 	allowed-sender-tcp-fail.sh \
@@ -2080,13 +2167,17 @@ EXTRA_DIST= \
 	imtcp-tls-gtls-x509fingerprint.sh \
 	imtcp-tls-gtls-x509name-invld.sh \
 	imtcp-tls-gtls-x509name.sh \
+	imtcp-tls-gtls-x509name-legacy.sh \
 	imtcp-drvr-in-input-basic.sh \
 	imtcp-multi-drvr-basic.sh \
 	imtcp-multi-drvr-basic-parallel.sh \
 	imtcp-multi-drvr-basic-ptcp_gtls_ossl.sh \
 	imtcp-tls-basic.sh \
+	imtcp-tls-input-basic.sh \
+	imtcp-tls-input-2certs.sh \
 	imtcp-tls-basic-verifydepth.sh \
 	imtcp-tls-basic-vg.sh \
+	imtcp-tls-no-lstn-startup.sh \
 	imtcp_incomplete_frame_at_end.sh \
 	imtcp-multiport.sh \
 	imtcp-bigmessage-octetcounting.sh \
@@ -2095,15 +2186,20 @@ EXTRA_DIST= \
 	udp-msgreduc-vg.sh \
 	manytcp-too-few-tls-vg.sh \
 	imtcp-tls-ossl-basic.sh \
+	imtcp-tls-ossl-input-basic.sh \
+	imtcp-tls-ossl-input-2certs.sh \
 	imtcp-tls-ossl-basic-tlscommands.sh \
 	imtcp-tls-ossl-basic-verifydepth.sh \
 	imtcp-tls-ossl-invalid-verifydepth.sh \
 	sndrcv_tls_ossl_anon_ipv4.sh \
 	sndrcv_tls_ossl_anon_ipv6.sh \
 	sndrcv_tls_ossl_anon_rebind.sh \
+	sndrcv_tls_ossl_anon_ciphers.sh \
 	sndrcv_tls_ossl_certvalid.sh \
+	sndrcv_tls_ossl_certvalid_action_level.sh \
 	sndrcv_tls_ossl_certvalid_expired.sh \
 	sndrcv_tls_ossl_certvalid_tlscommand.sh \
+	sndrcv_tls_ossl_certvalid_ciphers.sh \
 	imtcp-tls-ossl-x509valid.sh \
 	imtcp-tls-ossl-x509name.sh \
 	imtcp-tls-ossl-x509fingerprint.sh \
@@ -2244,6 +2340,10 @@ EXTRA_DIST= \
 	improg_simple_multi.sh \
 	imhttp-post-payload.sh \
 	imhttp-post-payload-vg.sh \
+	imhttp-post-payload-basic-auth.sh \
+	imhttp-post-payload-basic-auth-vg.sh \
+	imhttp-post-payload-query-params.sh \
+	imhttp-post-payload-query-params-vg.sh \
 	imhttp-post-payload-large.sh \
 	imhttp-post-payload-large-vg.sh \
 	testsuites/imhttp-large-data.txt \
@@ -2256,6 +2356,7 @@ EXTRA_DIST= \
 	imhttp-post-payload-compress.sh \
 	imhttp-post-payload-compress-vg.sh \
 	testsuites/docroot/file.txt \
+	testsuites/htpasswd \
 	omhttp-auth.sh \
 	omhttp-basic.sh \
 	omhttp-batch-fail-with-400.sh \
@@ -2383,6 +2484,8 @@ EXTRA_DIST= \
 	imfile-statefile-no-file_id.sh \
 	imfile-statefile-no-file_id-TO-file_id.sh \
 	imfile-statefile-directory.sh \
+	imfile-statefile-delete.sh \
+	imfile-statefile-no-delete.sh \
 	imfile-persist-state-1.sh \
 	imfile-freshStartTail1.sh \
 	imfile-freshStartTail2.sh \
@@ -2408,6 +2511,13 @@ EXTRA_DIST= \
 	imfile-logrotate-nocopytruncate.sh \
 	imfile-logrotate-multiple.sh \
 	imfile-growing-file-id.sh \
+	imfile-ignore-old-file-1.sh \
+	imfile-ignore-old-file-2.sh \
+	imfile-ignore-old-file-3.sh \
+	imfile-ignore-old-file-4.sh \
+	imfile-ignore-old-file-5.sh \
+	imfile-ignore-old-file-6.sh \
+	imfile-ignore-old-file-7.sh \
 	glbl-oversizeMsg-truncate-imfile.sh \
 	dynfile_invld_async.sh \
 	dynfile_invld_sync.sh \
@@ -2437,6 +2547,7 @@ EXTRA_DIST= \
 	imuxsock_legacy.sh \
 	imuxsock_logger_parserchain.sh \
 	imuxsock_logger.sh \
+	imuxsock_logger_ratelimit.sh \
 	imuxsock_logger_ruleset.sh \
 	imuxsock_logger_ruleset_ratelimit.sh \
 	imuxsock_logger_err.sh \
@@ -2517,6 +2628,8 @@ EXTRA_DIST= \
 	no-dynstats.sh \
 	omfwd_impstats-udp.sh \
 	omfwd_impstats-tcp.sh \
+	perctile-simple.sh \
+	perctile-simple-vg.sh \
 	stats-json.sh \
 	stats-json-vg.sh \
 	stats-cee.sh \
@@ -2637,6 +2750,7 @@ EXTRA_DIST= \
 	sndrcv_tls_anon_ipv6.sh \
 	sndrcv_tls_priorityString.sh \
 	sndrcv_tls_certvalid.sh \
+	sndrcv_tls_certvalid_action_level.sh \
 	sndrcv_tls_certvalid_expired.sh \
 	sndrcv_tls_certvalid_expired_defaultmode.sh \
 	sndrcv_tls_certless_clientonly.sh \

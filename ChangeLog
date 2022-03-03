@@ -1,5 +1,243 @@
 ----------------------------------------------------------------------------------------
-Scheduled Release 8.2108.0 (aka 2021.08) 2021-08-??
+Scheduled Release 8.2112.0 (aka 2021.12) 2021-12-16
+- 2021-12-14: refactor:Deallocate outchannel resources in rsconf destructor
+  Thanks to Attila Lakatos for the patch.
+- 2021-12-14: refactor: use runConf instead of loadConf in ratelimiting during runtime
+  Thanks to Attila Lakatos for the patch.
+- 2021-11-22: new contribtion: URL parser module function using libfa
+  Thanks to Théo Bertin for the patch.
+- 2021-11-18: mmanon: relax IPv6 detection - improve anonymization
+  We so far tried to ensure a value is really an IPv6 address, in order
+  to avoid to mangle with just similar-looking information elements.
+  However, this lead to misdetection for unusual formats, e.g. when a
+  port is appended to a numerical IPv6 adress given without braces [].
+  This has been changed now. In a sense, we now prefer to err on the
+  side of privacy.
+  BEHAVIOR CHANGE:
+  Previously, a suspect value was not anonymized, and thus some other
+  elements (like some MAC addresses) preserved. Now the opposite is
+  true, and we anonymize anything that looks close enough to be an
+  IPv6 address. This improves anonymization.
+  closes https://github.com/rsyslog/rsyslog/issues/4725
+- 2021-11-10: ruleset bugfix: ruleset queue was incorrectly named
+  The ruleset was incorrectly and unusably named. This was a regeression
+  from 4a63f8e9629c3c9481a8b6f9d7787e3b3304320b.
+  Many thanks to github user digirati82 for alerting us.
+  closes https://github.com/rsyslog/rsyslog/issues/4730
+- 2021-11-10: omsnmp: update module to current IP best practices
+  The omsnmp module uses the inet_addr() function to convert the Internet host address
+  from IPv4 numbers-and-dots notation into binary data in network byte order. If the input
+  is invalid, INADDR_NONE (usually -1) is returned. Use of this function is problematic
+  because -1 is a valid address (255.255.255.255). We should avoid its use in favor of
+  inet_aton(), inet_pton(3), or getaddrinfo(3), which provide a cleaner way to indicate
+  error return [1].
+  This is just a request to satisfy covscan, so no error is reported at all.
+  Thanks to Attila Lakatos for the patch.
+- 2021-10-27: ommysql: fix threading bug
+  When the MariaDB connection was (re)established, old or NULL handle
+  could be used. This is fixed now.
+  We need to synchronize access to the mysql handle, because multiple threads
+  use it and we may need to (re)init it during processing. This could lead to
+  races with potentially wrong addresses or NULL accesses. If this really
+  matters mostly depends on the MariaDB/MySQL client library. It looks like
+  they guard against fatal failuers. Anyhow, logging errors inside rsyslog
+  could happen in any case.
+- 2021-10-25: testbench: false positive when impstats was not built
+  Test omfwd_fast_imuxsock failed when impstats was not built. This
+  has been corrected, test is now only executed when impstats is
+  present.
+- 2021-10-25: imtcp: add support for permittedPeers setting at input() level
+  The permittedPeers settig was actually forgotten during the refactoring
+  of TLS input() level settings. This functionality is now added.
+  closes: https://github.com/rsyslog/rsyslog/issues/4706
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2110.0 (aka 2021.10) 2021-10-19
+- 2021-10-13: config bugfix: global(security.abortonidresolutionfail=) did not work
+  when used with rscript based configuration, it was not checked.
+- 2021-10-13: config bugfix: global param $privDropToUser did not work correctly
+  The parameter was not implemented for rscript based configuration and
+  did not properly apply to legacy configuration. In essence, it almost always
+  did not work as expected.
+  see also: https://github.com/rsyslog/rsyslog/issues/4642
+  see also: https://github.com/rsyslog/rsyslog/commit/cbcaf2c7e5b67e5465e47bc7cc67af2eae47bd31
+- 2021-10-12: rscript bugfix: ruleset called async when ruleset had queue.type="direct"
+  The call rscript statement is able to call a rule set either synchronously or
+  asynchronously. We did this, because practice showed that both modes
+  are needed. For various reasons we decided to make async
+  calls if the ruleset has a queue assigned and sync if not.
+  To know if a "queue is assigned" we just checked if queue parameters were
+  given. It was overlookeded the case of someone explicitly specifying a
+  "direct  queue", aka "no queue". As such, queue="direct" triggered async
+  calls. That in turn meant that when a write operation to a variable was
+  made inside that rule set, other rulesets could or could not see the
+  write. While if was often not seen, this was a data race where the
+  change could also be seen by the outside.
+  This is now fixed. No matter if queue.type="direct" is specified or
+  left out, the call will always by synchronous. Any values written to
+  variables will also be seen by the "outside world" in later processing
+  stages.
+  Note that this has some potential to BREAK EXISTING CONFIGURATIONS.
+  We deem this acceptable because:
+  1. this was racy at all, so unexpected behaviour could alwas occur
+  2. it is actually unlikely that someone used the triggering conditions
+     in practice. But we can not outrule this, especially when the
+     configuration was auto-generated.
+  Potential compatibility issues can be solved by defining a small
+  array-memory queue on the ruleset in question instead of specifying
+  direct type.
+  Again, we expect that almost all users will never experience any
+  problems. If you do, however, please let us know: we may add an
+  option to re-enable the bug.
+- 2021-10-12: ksi bugfix: locking bug fixed in rsksiCtxOpenFile
+  Thanks to Taavi Valjaots for the patch.
+- 2021-10-11: core bugfix: fix typo in error message
+  Thanks to github user jkschulz for the patch.
+- 2021-10-11: tcpsrv bugfix: compilation without exceptions
+  tcpsrv.c:992:1: error: label at end of compound statement
+   finalize_it:
+   ^~~~~~~~~~~
+  Quoting from pthread.h:
+    pthread_cleanup_push and pthread_cleanup_pop are macros and must always
+    be used in matching pairs at the same nesting level of braces.
+  Amends commit bcdd220142ec9eb106550195ba331fd114adb0bd.
+  Thanks to Orgad Shaneh for the patch.
+- 2021-10-11: mkubernetes bugfix: no connection retry to kubernetes APP
+  When connection to the kubernates API was not possible, mmkubernetes
+  did not retry. This does now happen via regular rsyslog retry
+  mechanism.
+  Thanks to github user jayme-github for the analysis and patch.
+  closes https://github.com/rsyslog/rsyslog/issues/4669
+- 2021-10-11: openssl bugfix: Correct gnutlsPriorityString (custom ciphers) behaviour
+  - Only apply default anon ciphers if gnutlsPriorityString is NULL and
+    Authentication Mode is set to anon. Otherwise we do not set them
+    as they overwrite custom Ciphers.
+  - Added two tests for custom cipher configuration (anon/certvalid mode).
+  - Add call for applyGnutlsPriorityString if gnutlsPriorityString changes.
+  - Merged openssl init code from Connect into osslInitSession
+  closes: https://github.com/rsyslog/rsyslog/issues/4686
+- 2021-10-11: build issue: handle undefined MAXPATHLEN, PATH_MAX
+  While we handled missing PATH_MAX, we did not handle missing MAXPATHLEN.
+  This happens under GNU/Hurd, because there is no official limit. However,
+  extremely long pathes are extremely uncommon, so we do not want to
+  use slow dynamic alloc each time we need to build pathes. So we
+  impose a limit of 4KiB, which should be fairly enough. Note that
+  this obviously increases stack requirements in GNU/Hurd.
+  As suggested by Michael Biebl, we have now implemented a generic
+  approach to handle this via autoconf.
+- 2021-09-12: openssl: extended output information on connection failure
+  Now includes the remote client/server IP address in the log output.
+- 2021-09-12: imhttp enhancements - query parameter ingestion & basic auth support
+  - Basic Authentication support & tests
+    * configured via imhttp option "basicAuthFile". This option should be configured
+      to point to your htpasswd file generated via a standard htpasswd tool.
+    tests:
+    * imhttp-post-payload-basic-auth.sh
+    * imhttp-post-payload-basic-auth-vg.sh
+  - Query parameter ingestion capability & tests
+    use t `addmetadata` option to inject query parameters into
+    metadata for imhttp input.
+  DISTRO PACKAGERS BEWARE: NEW DEPENDENCY FOR IMHTTP:
+  libaprutil (libaprutil1-dev on debian'ish, apr-util-devel on Red Hat)
+  Thanks to Nelson Yen for the patch.
+- 2021-09-07: testbench bugfix: privdrop tests under root user did not work
+  When running under root, the privdrop tests did not properly work. This
+  patch fixes the issue and skips test where necessary.
+  This also includes some modernization of the related tests.
+  closes https://github.com/rsyslog/rsyslog/issues/4619
+- 2021-09-07: core/ratelimiting: fix rate limiting for already parsed messages
+  Rate limiting may not have worked if the considered message had already
+  been parsed (not having NEEDS_PARSING in msgFlags).
+  This affects also imuxsock in its default configuration
+  (useSpecialParser="true" and ratelimit.severity="1")
+- 2021-09-07: core bugfix: use of property $wday terminates string
+  When $wday is used inside a template, all template parts after it
+  are ignored. For exmaple:
+  template(name="json_filename" type="string" string="/var/log/%$wday%.log")
+  would generate something like "/var/log/0" - the ".log" part would be
+  missing. For the same reason, $wday can not reliably checked in script
+  filters.
+  Thanks to Alain Thivillon for reporting the bug and providing an
+  excellent analysis, which essentiellay was exactly this fix here.
+  closes https://github.com/rsyslog/rsyslog/issues/4670
+- 2021-09-07: core/queue bugfix: potential misadressing when queue discarded messages
+  When a discard mark was set, the queue was very busy and discarded messages, a
+  NULL pointer access could happen. Depending on circumstances, several problems
+  could occur, including a SEGFAULT. This is now fixed.
+  closes: https://github.com/rsyslog/rsyslog/issues/4437
+- 2021-09-07: imdiga bugfix: iOverallQueueSize calculation could be incorrect
+  This issue only affects testbench and rsyslog development debugging. The active
+  messages counter, used for synchronizing test steps, went wrong when the queue
+  discarded messages on it's consumer thread. Now fixed.
+- 2021-09-06: gnutls driver: SAN priority did not work correctly on server side
+  PrioritizeSAN was not propagated when accepting a new connection, this is now fixed.
+  Thanks to Attila Lakatos for the patch.
+- 2021-08-24: config: implement script-equavalent for $PrivDrop* statements
+  closes https://github.com/rsyslog/rsyslog/issues/891
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2108.0 (aka 2021.08) 2021-08-17
+- 2021-08-16: openssl tls: Improved error message output on tls failures.
+  closes: https://github.com/rsyslog/rsyslog/issues/4645
+- 2021-08-16: impstats: add percentile metrics tracking functionality
+  Brief overview:
+  TO configure tracking percentile metrics in rainerscript:
+  User would need to define:
+    - which percentile to track, such as [p50, p99, etc.]
+    - window size - note, this correlates directly with memory usage to
+    track the percentiles.
+  To track a value, user would call built-in function `percentile_observe()` in their configurations to
+  record an integer value, and percentile metrics would be emitted every
+  impstats interval.
+  Thanks to Nelson Yen for the patch.
+- 2021-08-12: imfile: add parameter "ignoreolderthanoption"
+  instructs imfile not to ingest a file that has not been modified in the
+  specified number of seconds.
+  Thanks to github user yanjunli76 for the patch (submitted from Nelson Yen)
+- 2021-08-10: imklog bugfix: invalid memory adressing, could cause abort
+  This is a regeression from commit 94c4a87. It introduced a free() call
+  using an object that was no longer valid (the main pointer to the
+  to-be-freed object) was already freed at time of use. This could
+  cause various issues, including a segfault.
+  Note: this bug was triggerred only during late phase of rsyslog
+  shutdown, so it did not affect regular operation.
+  Special thanks to github user wxiaoguang for analyzing the issue
+  and providing a draft fix proposal, on which this patch builds.
+  see also https://github.com/rsyslog/rsyslog/pull/4629
+  closes https://github.com/rsyslog/rsyslog/issues/4625
+- 2021-08-09: imfile bugfix: deleteStateOnFileDelete missed some state files
+  When the log file is deleted, imfile would attempt to delete the statefile but it
+  was missing the file_id part of the statefile name. This means the statefiles were
+  only removed in the log file was less than 512 characters, because for very small
+  files the file ID hash is not created. This lead to some state files not being
+  deleted.
+  Thanks to pearseimperva for the patch.
+- 2021-08-09: imfile bugfix: hash char invalidly added in readmode != 0
+  If imfile is ingesting log files with readMode set to 2 or 1, the resulting
+  messages all have a '#' character at the end. This patch corrects the behaviour.
+  Note: if some external script "supported" the bug of extra hash character at
+  the end of line, it may be necessary to update them.
+  closes https://github.com/rsyslog/rsyslog/issues/4491
+- 2021-08-09: omelasticsearch bugfix: errorFile mutex was not consistently locked
+  Lock the file during SIGHUPs to avoid issues with concurrent accesses by
+  writeDataError().
+  Thanks to François Poirotte for the patch.
+- 2021-08-09: imudp: add socket type (IPv4 vs. 6) to input name
+  Most importantly, the input name is used for stats counter names as
+  well. Previously, the same name was used for IPv4 and IPv6, so we had
+  two counters with an equal name. That left users puzzled.
+  Unfortunately, this change can potentially require changes to existing
+  analysis scripts, as the name is now slightly different.
+  closes https://github.com/rsyslog/rsyslog/issues/4364
+- 2021-08-06: omfwd: add capability for action-specific TLS certificate settings
+  This permits to override the global definitions for TLS certificates
+  at the action() level.
+- 2021-08-06: imfile bugfix: file handle leak if "freshStartTail" was turned on
+- 2021-08-05: imtcp: permit to use different certificate files per input/action
+  This completes the ability to override global/default TLS settings at the imtcp
+  input() level. Support for using multiple CAs/Certs per Connection is now provided.
+- 2021-08-04: imptcp bugfix: keep alive interval was incorrectly set
+  The interval was accidentally set to keep alive interval. This has been
+  corrected.
+  closes https://github.com/rsyslog/rsyslog/issues/4609
 - 2021-07-08: openssl network driver bugfix: small memory leak
   Fixes a static, non-growing memory leak which existed when parameter
   "GnutTLSPriorityString" was used. This was primarily a cosmetic issue,

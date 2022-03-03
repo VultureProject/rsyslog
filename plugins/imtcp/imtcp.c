@@ -63,7 +63,7 @@
 #include "tcpsrv.h"
 #include "ruleset.h"
 #include "rainerscript.h"
-#include "net.h" /* for permittedPeers, may be removed when this is removed */
+#include "net.h"
 #include "parserif.h"
 
 MODULE_TYPE_INPUT
@@ -141,6 +141,10 @@ struct instanceConf_s {
 	int iStrmDrvrMode;
 	uchar *pszStrmDrvrAuthMode;
 	uchar *pszStrmDrvrPermitExpiredCerts;
+	uchar *pszStrmDrvrCAFile;
+	uchar *pszStrmDrvrKeyFile;
+	uchar *pszStrmDrvrCertFile;
+	permittedPeers_t *pPermPeersRoot;
 	uchar *gnutlsPriorityString;
 	int iStrmDrvrExtendedCertCheck;
 	int iStrmDrvrSANPreference;
@@ -177,7 +181,10 @@ struct modConfData_s {
 	uchar *pszStrmDrvrName; /* stream driver to use */
 	uchar *pszStrmDrvrAuthMode; /* authentication mode to use */
 	uchar *pszStrmDrvrPermitExpiredCerts; /* control how to handly expired certificates */
-	struct cnfarray *permittedPeers;
+	uchar *pszStrmDrvrCAFile;
+	uchar *pszStrmDrvrKeyFile;
+	uchar *pszStrmDrvrCertFile;
+	permittedPeers_t *pPermPeersRoot;
 	sbool configSetViaV2Method;
 	sbool bPreserveCase; /* preserve case of fromhost; true by default */
 };
@@ -242,6 +249,10 @@ static struct cnfparamdescr inppdescr[] = {
 	{ "streamdriver.CheckExtendedKeyPurpose", eCmdHdlrBinary, 0 },
 	{ "streamdriver.PrioritizeSAN", eCmdHdlrBinary, 0 },
 	{ "streamdriver.TlsVerifyDepth", eCmdHdlrPositiveInt, 0 },
+	{ "streamdriver.cafile", eCmdHdlrString, 0 },
+	{ "streamdriver.keyfile", eCmdHdlrString, 0 },
+	{ "streamdriver.certfile", eCmdHdlrString, 0 },
+	{ "permittedpeer", eCmdHdlrArray, 0 },
 	{ "gnutlsprioritystring", eCmdHdlrString, 0 },
 	{ "keepalive", eCmdHdlrBinary, 0 },
 	{ "keepalive.probes", eCmdHdlrNonNegInt, 0 },
@@ -339,7 +350,7 @@ createInstance(instanceConf_t **pinst)
 	instanceConf_t *inst = NULL;
 
 	DEFiRet;
-	CHKmalloc(inst = malloc(sizeof(instanceConf_t)));
+	CHKmalloc(inst = (instanceConf_t*) calloc(1, sizeof(instanceConf_t)));
 	CHKmalloc(inst->cnf_params = (tcpLstnParams_t*) calloc(1, sizeof(tcpLstnParams_t)));
 	inst->next = NULL;
 	inst->pszBindRuleset = NULL;
@@ -353,6 +364,10 @@ createInstance(instanceConf_t **pinst)
 	inst->pszStrmDrvrName = NULL;
 	inst->pszStrmDrvrAuthMode = NULL;
 	inst->pszStrmDrvrPermitExpiredCerts = NULL;
+	inst->pszStrmDrvrCAFile = NULL;
+	inst->pszStrmDrvrKeyFile = NULL;
+	inst->pszStrmDrvrCertFile = NULL;
+	inst->pPermPeersRoot = NULL;
 	inst->gnutlsPriorityString = NULL;
 	inst->iStrmDrvrMode = loadModConf->iStrmDrvrMode;
 	inst->iStrmDrvrExtendedCertCheck = loadModConf->iStrmDrvrExtendedCertCheck;
@@ -385,6 +400,7 @@ createInstance(instanceConf_t **pinst)
 	*pinst = inst;
 finalize_it:
 	if(iRet != RS_RET_OK) {
+		free(inst->cnf_params);
 		free(inst);
 	}
 	RETiRet;
@@ -416,7 +432,7 @@ static rsRetVal addInstance(void __attribute__((unused)) *pVal, uchar *pNewVal)
 		CHKmalloc(inst->cnf_params->pszAddr = ustrdup(cs.lstnIP));
 	}
 	if((cs.lstnPortFile == NULL) || (cs.lstnPortFile[0] == '\0')) {
-		inst->cnf_params->pszAddr = NULL;
+		inst->cnf_params->pszLstnPortFileName = NULL;
 	} else {
 		CHKmalloc(inst->cnf_params->pszLstnPortFileName = ustrdup(cs.lstnPortFile));
 	}
@@ -439,6 +455,7 @@ addListner(modConfData_t *modConf, instanceConf_t *inst)
 {
 	DEFiRet;
 	uchar *psz;	/* work variable */
+	permittedPeers_t *peers;
 
 	tcpsrv_t *pOurTcpsrv;
 	CHKiRet(tcpsrv.Construct(&pOurTcpsrv));
@@ -483,8 +500,23 @@ addListner(modConfData_t *modConf, instanceConf_t *inst)
 	psz = (inst->pszStrmDrvrPermitExpiredCerts == NULL)
 			? modConf->pszStrmDrvrPermitExpiredCerts : inst->pszStrmDrvrPermitExpiredCerts;
 	CHKiRet(tcpsrv.SetDrvrPermitExpiredCerts(pOurTcpsrv, psz));
-	if(pPermPeersRoot != NULL) {
-		CHKiRet(tcpsrv.SetDrvrPermPeers(pOurTcpsrv, pPermPeersRoot));
+
+	psz = (inst->pszStrmDrvrCAFile == NULL)
+			? modConf->pszStrmDrvrCAFile : inst->pszStrmDrvrCAFile;
+	CHKiRet(tcpsrv.SetDrvrCAFile(pOurTcpsrv, psz));
+
+	psz = (inst->pszStrmDrvrKeyFile == NULL)
+			? modConf->pszStrmDrvrKeyFile : inst->pszStrmDrvrKeyFile;
+	CHKiRet(tcpsrv.SetDrvrKeyFile(pOurTcpsrv, psz));
+
+	psz = (inst->pszStrmDrvrCertFile == NULL)
+			? modConf->pszStrmDrvrCertFile : inst->pszStrmDrvrCertFile;
+	CHKiRet(tcpsrv.SetDrvrCertFile(pOurTcpsrv, psz));
+
+	peers = (inst->pPermPeersRoot == NULL)
+			? modConf->pPermPeersRoot : inst->pPermPeersRoot;
+	if(peers != NULL) {
+			CHKiRet(tcpsrv.SetDrvrPermPeers(pOurTcpsrv, peers));
 	}
 
 	/* initialized, now add socket and listener params */
@@ -500,6 +532,7 @@ addListner(modConfData_t *modConf, instanceConf_t *inst)
 	if((ustrcmp(inst->cnf_params->pszPort, UCHAR_CONSTANT("0")) == 0
 		&& inst->cnf_params->pszLstnPortFileName == NULL)
 			|| ustrcmp(inst->cnf_params->pszPort, UCHAR_CONSTANT("0")) < 0) {
+		LogMsg(0, RS_RET_OK, LOG_WARNING, "imtcp: port 0 and no port file set -> using port 514 instead");
 		CHKmalloc(inst->cnf_params->pszPort = (uchar*)strdup("514"));
 	}
 	tcpsrv.configureTCPListen(pOurTcpsrv, inst->cnf_params);
@@ -572,10 +605,22 @@ CODESTARTnewInpInst
 			inst->pszStrmDrvrAuthMode = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
 		} else if(!strcmp(inppblk.descr[i].name, "streamdriver.permitexpiredcerts")) {
 			inst->pszStrmDrvrPermitExpiredCerts = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if(!strcmp(inppblk.descr[i].name, "streamdriver.cafile")) {
+			inst->pszStrmDrvrCAFile = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if(!strcmp(inppblk.descr[i].name, "streamdriver.keyfile")) {
+			inst->pszStrmDrvrKeyFile = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if(!strcmp(inppblk.descr[i].name, "streamdriver.certfile")) {
+			inst->pszStrmDrvrCertFile = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
 		} else if(!strcmp(inppblk.descr[i].name, "streamdriver.name")) {
 			inst->pszStrmDrvrName = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
 		} else if(!strcmp(inppblk.descr[i].name, "gnutlsprioritystring")) {
 			inst->gnutlsPriorityString = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if(!strcmp(inppblk.descr[i].name, "permittedpeer")) {
+			for(int j = 0 ; j <  pvals[i].val.d.ar->nmemb ; ++j) {
+				uchar *const peer = (uchar*) es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
+				CHKiRet(net.AddPermittedPeer(&inst->pPermPeersRoot, peer));
+				free(peer);
+			}
 		} else if(!strcmp(inppblk.descr[i].name, "flowcontrol")) {
 			inst->bUseFlowControl = (int) pvals[i].val.d.n;
 		} else if(!strcmp(inppblk.descr[i].name, "disablelfdelimiter")) {
@@ -654,12 +699,14 @@ CODESTARTbeginCnfLoad
 	loadModConf->pszStrmDrvrName = NULL;
 	loadModConf->pszStrmDrvrAuthMode = NULL;
 	loadModConf->pszStrmDrvrPermitExpiredCerts = NULL;
-	loadModConf->permittedPeers = NULL;
+	loadModConf->pszStrmDrvrCAFile = NULL;
+	loadModConf->pszStrmDrvrKeyFile = NULL;
+	loadModConf->pszStrmDrvrCertFile = NULL;
+	loadModConf->pPermPeersRoot = NULL;
 	loadModConf->configSetViaV2Method = 0;
 	loadModConf->bPreserveCase = 1; /* default to true */
 	bLegacyCnfModGlobalsPermitted = 1;
 	/* init legacy config variables */
-	cs.pszStrmDrvrAuthMode = NULL;
 	resetConfigVariables(NULL, NULL); /* dummy parameters just to fulfill interface def */
 ENDbeginCnfLoad
 
@@ -736,10 +783,20 @@ CODESTARTsetModCnf
 			loadModConf->pszStrmDrvrAuthMode = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
 		} else if(!strcmp(modpblk.descr[i].name, "streamdriver.permitexpiredcerts")) {
 			loadModConf->pszStrmDrvrPermitExpiredCerts = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if(!strcmp(modpblk.descr[i].name, "streamdriver.cafile")) {
+			loadModConf->pszStrmDrvrCAFile = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if(!strcmp(modpblk.descr[i].name, "streamdriver.keyfile")) {
+			loadModConf->pszStrmDrvrKeyFile = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if(!strcmp(modpblk.descr[i].name, "streamdriver.certfile")) {
+			loadModConf->pszStrmDrvrCertFile = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
 		} else if(!strcmp(modpblk.descr[i].name, "streamdriver.name")) {
 			loadModConf->pszStrmDrvrName = (uchar*)es_str2cstr(pvals[i].val.d.estr, NULL);
 		} else if(!strcmp(modpblk.descr[i].name, "permittedpeer")) {
-			loadModConf->permittedPeers = cnfarrayDup(pvals[i].val.d.ar);
+			for(int j = 0 ; j <  pvals[i].val.d.ar->nmemb ; ++j) {
+				uchar *const peer = (uchar*) es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
+				CHKiRet(net.AddPermittedPeer(&loadModConf->pPermPeersRoot, peer));
+				free(peer);
+			}
 		} else if(!strcmp(modpblk.descr[i].name, "preservecase")) {
 			loadModConf->bPreserveCase = (int) pvals[i].val.d.n;
 		} else {
@@ -777,6 +834,11 @@ CODESTARTendCnfLoad
 		pModConf->iKeepAliveProbes = cs.iKeepAliveProbes;
 		pModConf->iKeepAliveIntvl = cs.iKeepAliveIntvl;
 		pModConf->iKeepAliveTime = cs.iKeepAliveTime;
+		if(pPermPeersRoot != NULL) {
+			assert(pModConf->pPermPeersRoot == NULL);
+			pModConf->pPermPeersRoot = pPermPeersRoot;
+			pPermPeersRoot = NULL; /* memory handed over! */
+		}
 		if((cs.pszStrmDrvrAuthMode == NULL) || (cs.pszStrmDrvrAuthMode[0] == '\0')) {
 			loadModConf->pszStrmDrvrAuthMode = NULL;
 		} else {
@@ -819,15 +881,8 @@ ENDcheckCnf
 
 BEGINactivateCnfPrePrivDrop
 	instanceConf_t *inst;
-	int i;
 CODESTARTactivateCnfPrePrivDrop
 	runModConf = pModConf;
-	if(runModConf->permittedPeers != NULL) {
-		for(i = 0 ; i <  runModConf->permittedPeers->nmemb ; ++i) {
-			setPermittedPeer(NULL, (uchar*)
-			    es_str2cstr(runModConf->permittedPeers->arr[i], NULL));
-		}
-	}
 	for(inst = runModConf->root ; inst != NULL ; inst = inst->next) {
 		addListner(runModConf, inst);
 	}
@@ -851,22 +906,31 @@ ENDactivateCnf
 BEGINfreeCnf
 	instanceConf_t *inst, *del;
 CODESTARTfreeCnf
+	free(pModConf->gnutlsPriorityString);
 	free(pModConf->pszStrmDrvrName);
 	free(pModConf->pszStrmDrvrAuthMode);
-	free(pModConf->gnutlsPriorityString);
 	free(pModConf->pszStrmDrvrPermitExpiredCerts);
-	if(pModConf->permittedPeers != NULL) {
-		cnfarrayContentDestruct(pModConf->permittedPeers);
-		free(pModConf->permittedPeers);
+	free(pModConf->pszStrmDrvrCAFile);
+	free(pModConf->pszStrmDrvrKeyFile);
+	free(pModConf->pszStrmDrvrCertFile);
+	if(pModConf->pPermPeersRoot != NULL) {
+		net.DestructPermittedPeers(&pModConf->pPermPeersRoot);
 	}
+
 	for(inst = pModConf->root ; inst != NULL ; ) {
 		free((void*)inst->pszBindRuleset);
 		free((void*)inst->pszStrmDrvrAuthMode);
 		free((void*)inst->pszStrmDrvrName);
 		free((void*)inst->pszStrmDrvrPermitExpiredCerts);
+		free((void*)inst->pszStrmDrvrCAFile);
+		free((void*)inst->pszStrmDrvrKeyFile);
+		free((void*)inst->pszStrmDrvrCertFile);
 		free((void*)inst->gnutlsPriorityString);
 		free((void*)inst->pszInputName);
 		free((void*)inst->dfltTZ);
+		if(inst->pPermPeersRoot != NULL) {
+			net.DestructPermittedPeers(&inst->pPermPeersRoot);
+		}
 		del = inst;
 		inst = inst->next;
 		free(del);
@@ -960,12 +1024,14 @@ ENDwillRun
 BEGINafterRun
 CODESTARTafterRun
 	tcpsrv_etry_t *etry = tcpsrv_root;
+	tcpsrv_etry_t *del;
 	while(etry != NULL) {
 		iRet = tcpsrv.Destruct(&etry->tcpsrv);
 		// TODO: check iRet, reprot error
+		del = etry;
 		etry = etry->next;
+		free(del);
 	}
-
 	net.clearAllowedSenders(UCHAR_CONSTANT("TCP"));
 ENDafterRun
 
@@ -979,10 +1045,6 @@ ENDisCompatibleWithFeature
 
 BEGINmodExit
 CODESTARTmodExit
-	if(pPermPeersRoot != NULL) {
-		net.DestructPermittedPeers(&pPermPeersRoot);
-	}
-
 	/* release objects we used */
 	objRelease(net, LM_NET_FILENAME);
 	objRelease(netstrm, LM_NETSTRMS_FILENAME);
@@ -1008,11 +1070,11 @@ resetConfigVariables(uchar __attribute__((unused)) *pp, void __attribute__((unus
 	cs.iAddtlFrameDelim = TCPSRV_NO_ADDTL_DELIMITER;
 	cs.maxFrameSize = 200000;
 	cs.bDisableLFDelim = 0;
-	free(cs.pszInputName);
-	cs.pszInputName = NULL;
+	cs.bPreserveCase = 1;
 	free(cs.pszStrmDrvrAuthMode);
 	cs.pszStrmDrvrAuthMode = NULL;
-	cs.bPreserveCase = 1;
+	free(cs.pszInputName);
+	cs.pszInputName = NULL;
 	free(cs.lstnPortFile);
 	cs.lstnPortFile = NULL;
 	return RS_RET_OK;

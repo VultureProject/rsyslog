@@ -2,9 +2,9 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([rsyslog],[8.2108.0.master],[rsyslog@lists.adiscon.com])  # UPDATE on release
-AC_DEFINE(VERSION_YEAR, 21, [year part of real rsyslog version])  # UPDATE on release
-AC_DEFINE(VERSION_MONTH, 8, [month part of real rsyslog version]) # UPDATE on release
+AC_INIT([rsyslog],[8.2112.0],[rsyslog@lists.adiscon.com])   # UPDATE on release
+AC_DEFINE(VERSION_YEAR,  21, [year part of real rsyslog version])  # UPDATE on release
+AC_DEFINE(VERSION_MONTH, 12, [month part of real rsyslog version]) # UPDATE on release
 
 AM_INIT_AUTOMAKE([subdir-objects])
 
@@ -148,6 +148,20 @@ AS_IF([test -d "$srcdir"/.git && ! test -f  "$srcdir"/.tarball-version], [in_git
 
 
 AC_DEFINE_UNQUOTED([HOSTENV], "$host", [the host environment, can be queried via a system variable])
+
+# Some Unix systems, like Gnu Hurd, don't define PATH_MAX
+AC_MSG_CHECKING([for PATH_MAX])
+AC_COMPILE_IFELSE( [AC_LANG_PROGRAM([[#include <limits.h>]],
+                                    [[char checker[PATH_MAX];]])],
+                   [
+                      AC_MSG_RESULT([yes])
+                    ],
+                    [
+                      AC_MSG_RESULT([no, mocking PATH_MAX = 4096])
+                      AC_DEFINE([PATH_MAX], 4096, [replacement for missing PATH_MAX])
+                      AC_DEFINE([MAXPATHLEN], 4096, [replacement for missing PATH_MAX]) # we assume this does not exit
+                    ]
+                 )
 
 # Checks for libraries.
 save_LIBS=$LIBS
@@ -384,6 +398,28 @@ if test "$enable_fmhash_xxhash" = "yes"; then
 			HASH_XXHASH_LIBS="-lxxhash"
 			AC_SUBST(HASH_XXHASH_LIBS)],
 			[AC_MSG_ERROR([Unable to add XXHASH support for hash64.])])
+	])
+fi
+
+
+#faup header checks
+AC_ARG_ENABLE(ffaup,
+	[AS_HELP_STRING([--enable-ffaup],[Enable ffaup support @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_ffaup="yes" ;;
+          no) enable_ffaup="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-ffaup) ;;
+         esac],
+	[enable_ffaup=no]
+)
+
+AM_CONDITIONAL(ENABLE_FFAUP, test x$enable_ffaup = xyes)
+if test "$enable_ffaup" = "yes"; then
+	AC_CHECK_LIB([faupl], [faup_init], [
+		AC_CHECK_HEADER([faup/faup.h], [
+			FAUP_LIBS="-lfaupl"
+			AC_SUBST(FAUP_LIBS)],
+			[AC_MSG_ERROR([Unable to add faup support for URL parsing.])])
 	])
 fi
 
@@ -1851,8 +1887,24 @@ if test "x$enable_imhttp" = "xyes"; then
     [AC_MSG_FAILURE([civetweb is missing])]
   )
   AC_SEARCH_LIBS(mg_version, civetweb)
+
+  PKG_CHECK_MODULES(APU, apr-util-1 >= 1.0)
+  save_CFLAGS="$CFLAGS"
+  save_LIBS="$LIBS"
+
+  CFLAGS="$CFLAGS $APU_CFLAGS"
+  LIBS="$LIBS $APU_LIBS"
+
+  AC_CHECK_HEADERS([apr_md5.h])
+  AC_CHECK_HEADERS([apr_base64.h])
+  AC_SEARCH_LIBS(apr_base64_decode, aprutil-1)
+  AC_SEARCH_LIBS(apr_password_validate, aprutil-1)
+
   CIVETWEB_LIBS=-lcivetweb
   AC_SUBST(CIVETWEB_LIBS)
+
+  CFLAGS="$save_CFLAGS"
+  LIBS="$save_LIBS"
 fi
 AM_CONDITIONAL(ENABLE_IMHTTP, test x$enable_imhttp = xyes)
 
@@ -2694,6 +2746,7 @@ AC_CONFIG_FILES([Makefile \
 		contrib/omhttp/Makefile \
 		contrib/fmhash/Makefile \
 		contrib/fmunflatten/Makefile \
+		contrib/ffaup/Makefile \
 		contrib/pmsnare/Makefile \
 		contrib/pmpanngfw/Makefile \
 		contrib/pmaixforwardedfrom/Makefile \
@@ -2842,6 +2895,7 @@ echo "    fmhttp enabled:                           $enable_fmhttp"
 echo "    fmhash enabled:                           $enable_fmhash"
 echo "    fmhash with xxhash enabled:               $enable_fmhash_xxhash"
 echo "    fmunflatten enabled:                      $enable_fmunflatten"
+echo "    ffaup enabled:                            $enable_ffaup"
 echo
 echo "---{ debugging support }---"
 echo "    distcheck workaround enabled:             $enable_distcheck_workaround"

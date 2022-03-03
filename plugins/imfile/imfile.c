@@ -65,6 +65,7 @@
 #include "ratelimit.h"
 #include "srUtils.h"
 #include "parserif.h"
+#include "datetime.h"
 
 #include <regex.h>
 
@@ -90,6 +91,7 @@ DEFobjCurrIf(glbl)
 DEFobjCurrIf(strm)
 DEFobjCurrIf(prop)
 DEFobjCurrIf(ruleset)
+DEFobjCurrIf(datetime)
 
 extern int rs_siphash(const uint8_t *in, const size_t inlen, const uint8_t *k,
 	uint8_t *out, const size_t outlen); /* see siphash.c */
@@ -169,6 +171,7 @@ struct instanceConf_s {
 	sbool fileNotFoundError;
 	int maxLinesAtOnce;
 	uint32_t trimLineOverBytes;
+	uint32_t ignoreOlderThan;
 	int msgFlag;
 	uchar *escapeLFString;
 	ruleset_t *pBindRuleset;	/* ruleset to bind listener to (use system default if unspecified) */
@@ -343,6 +346,7 @@ static struct cnfparamdescr inppdescr[] = {
 	{ "freshstarttail", eCmdHdlrBinary, 0},
 	{ "filenotfounderror", eCmdHdlrBinary, 0},
 	{ "needparse", eCmdHdlrBinary, 0},
+	{ "ignoreolderthan", eCmdHdlrInt, 0},
 	{ "maxbytesperminute", eCmdHdlrInt, 0},
 	{ "maxlinesperminute", eCmdHdlrInt, 0}
 };
@@ -702,6 +706,22 @@ fs_node_print(const fs_node_t *const node, const int level)
 	}
 }
 
+static sbool
+isIgnoreOlderFile(const instanceConf_t *const inst, const char *const name)
+{
+	if (inst->ignoreOlderThan)
+	{
+		struct stat stat_buf;
+		time_t tt;
+		/* skip old files */
+		datetime.GetTime(&tt);
+		if (stat((char *)name, &stat_buf) == 0 && difftime(tt, stat_buf.st_mtime) > inst->ignoreOlderThan) {
+			return 1;
+		}
+	}
+	return 0;
+}
+
 /* add a new file system object if it not yet exists, ignore call
  * if it already does.
  */
@@ -709,12 +729,17 @@ static rsRetVal ATTR_NONNULL(1,2)
 act_obj_add(fs_edge_t *const edge, const char *const name, const int is_file,
 	const ino_t ino, const int is_symlink, const char *const source)
 {
-	act_obj_t *act;
+	act_obj_t *act = NULL;
 	char basename[MAXFNAME];
 	DEFiRet;
 	int fd = -1;
 	
 	DBGPRINTF("act_obj_add: edge %p, name '%s' (source '%s')\n", edge, name, source? source : "---");
+
+	if (isIgnoreOlderFile(edge->instarr[0], name)) {
+		ABORT_FINALIZE(RS_RET_ERR);
+	}
+
 	for(act = edge->active ; act != NULL ; act = act->next) {
 		if(!strcmp(act->name, name)) {
 			if (!source || !act->source_name || !strcmp(act->source_name, source)) {
@@ -748,6 +773,7 @@ act_obj_add(fs_edge_t *const edge, const char *const name, const int is_file,
 	act->file_id[0] = '\0';
 	act->file_id_prev[0] = '\0';
 	act->is_symlink = is_symlink;
+	act->ratelimiter = NULL;
 	if (source) { /* we are target of symlink */
 		CHKmalloc(act->source_name = strdup(source));
 	} else {
@@ -775,6 +801,8 @@ act_obj_add(fs_edge_t *const edge, const char *const name, const int is_file,
 finalize_it:
 	if(iRet != RS_RET_OK) {
 		if(act != NULL) {
+			if (act->ratelimiter != NULL)
+				ratelimitDestruct(act->ratelimiter);
 			free(act->name);
 			free(act);
 		}
@@ -996,7 +1024,7 @@ act_obj_destroy(act_obj_t *const act, const int is_deleted)
 		pollFile(act); /* get any left-over data */
 		if(inst->bRMStateOnDel) {
 			statefn = getStateFileName(act, statefile, sizeof(statefile));
-			getFullStateFileName(statefn, "", toDel, sizeof(toDel)); // TODO: check!
+			getFullStateFileName(statefn, act->file_id, toDel, sizeof(toDel)); // TODO: check!
 			statefn = toDel;
 		}
 		persistStrmState(act);
@@ -1544,6 +1572,7 @@ openFileWithoutStateFile(act_obj_t *const act)
 		const int fd = open(act->name, O_RDONLY | O_CLOEXEC);
 		if(fd >= 0) {
 			act->pStrm->iCurrOffs = lseek64(fd, 0, SEEK_END);
+			close(fd);
 			if(act->pStrm->iCurrOffs < 0) {
 				act->pStrm->iCurrOffs = 0;
 				LogError(errno, RS_RET_ERR, "imfile: could not query current "
@@ -1719,6 +1748,7 @@ createInstance(instanceConf_t **const pinst)
 	inst->readTimeout = loadModConf->readTimeout;
 	inst->delay_perMsg = 0;
 	inst->msgFlag = 0;
+	inst->ignoreOlderThan = 0;
 
 	/* node created, let's add to config */
 	if(loadModConf->tail == NULL) {
@@ -1855,6 +1885,7 @@ addInstance(void __attribute__((unused)) *pVal, uchar *pNewVal)
 		}
 	}
 	inst->trimLineOverBytes = cs.trimLineOverBytes;
+	inst->ignoreOlderThan = 0;
 	inst->iPersistStateInterval = cs.iPersistStateInterval;
 	inst->perMinuteRateLimits.maxBytesPerMinute = cs.maxBytesPerMinute;
 	inst->perMinuteRateLimits.maxLinesPerMinute = cs.maxLinesPerMinute;
@@ -1956,6 +1987,8 @@ CODESTARTnewInpInst
 			}
 		} else if(!strcmp(inppblk.descr[i].name, "trimlineoverbytes")) {
 			inst->trimLineOverBytes = pvals[i].val.d.n;
+		} else if(!strcmp(inppblk.descr[i].name, "ignoreolderthan")) {
+			inst->ignoreOlderThan = pvals[i].val.d.n;
 		} else if(!strcmp(inppblk.descr[i].name, "persiststateinterval")) {
 			inst->iPersistStateInterval = pvals[i].val.d.n;
 		} else if(!strcmp(inppblk.descr[i].name, "maxbytesperminute")) {
@@ -2804,6 +2837,7 @@ CODESTARTmodExit
 	objRelease(glbl, CORE_COMPONENT);
 	objRelease(prop, CORE_COMPONENT);
 	objRelease(ruleset, CORE_COMPONENT);
+	objRelease(datetime, CORE_COMPONENT);
 
 	#ifdef HAVE_INOTIFY_INIT
 	free(wdmap);
@@ -2874,6 +2908,7 @@ CODEmodInit_QueryRegCFSLineHdlr
 	CHKiRet(objUse(strm, CORE_COMPONENT));
 	CHKiRet(objUse(ruleset, CORE_COMPONENT));
 	CHKiRet(objUse(prop, CORE_COMPONENT));
+	CHKiRet(objUse(datetime, CORE_COMPONENT));
 
 	DBGPRINTF("version %s initializing\n", VERSION);
 	CHKiRet(omsdRegCFSLineHdlr((uchar *)"inputfilename", 0, eCmdHdlrGetWord,

@@ -201,6 +201,10 @@ static struct cnfparamdescr cnfparamdescr[] = {
 	{ "senders.keeptrack", eCmdHdlrBinary, 0 },
 	{ "inputs.timeout.shutdown", eCmdHdlrPositiveInt, 0 },
 	{ "privdrop.group.keepsupplemental", eCmdHdlrBinary, 0 },
+	{ "privdrop.group.id", eCmdHdlrPositiveInt, 0 },
+	{ "privdrop.group.name", eCmdHdlrGID, 0 },
+	{ "privdrop.user.id", eCmdHdlrPositiveInt, 0 },
+	{ "privdrop.user.name", eCmdHdlrUID, 0 },
 	{ "net.ipprotocol", eCmdHdlrGetWord, 0 },
 	{ "net.acladdhostnameonfail", eCmdHdlrBinary, 0 },
 	{ "net.aclresolvehostname", eCmdHdlrBinary, 0 },
@@ -1163,8 +1167,10 @@ glblProcessCnf(struct cnfobj *o)
 			continue;
 		if(!strcmp(paramblk.descr[i].name, "processinternalmessages")) {
 			bProcessInternalMessages = (int) cnfparamvals[i].val.d.n;
+			cnfparamvals[i].bUsed = TRUE;
 		} else if(!strcmp(paramblk.descr[i].name, "internal.developeronly.options")) {
 			glblDevOptions = (uint64_t) cnfparamvals[i].val.d.n;
+			cnfparamvals[i].bUsed = TRUE;
 		} else if(!strcmp(paramblk.descr[i].name, "stdlog.channelspec")) {
 #ifndef ENABLE_LIBLOGGING_STDLOG
 			LogError(0, RS_RET_ERR, "rsyslog wasn't "
@@ -1172,22 +1178,25 @@ glblProcessCnf(struct cnfobj *o)
 				"The 'stdlog.channelspec' parameter "
 				"is ignored. Note: the syslog API is used instead.\n");
 #else
-			stdlog_chanspec = (uchar*)
-				es_str2cstr(cnfparamvals[i].val.d.estr, NULL);
+			stdlog_chanspec = (uchar*) es_str2cstr(cnfparamvals[i].val.d.estr, NULL);
 			/* we need to re-open with the new channel */
 			stdlog_close(stdlog_hdl);
 			stdlog_hdl = stdlog_open("rsyslogd", 0, STDLOG_SYSLOG,
 					(char*) stdlog_chanspec);
+			cnfparamvals[i].bUsed = TRUE;
 #endif
 		} else if(!strcmp(paramblk.descr[i].name, "operatingstatefile")) {
 			if(operatingStateFile != NULL) {
 				LogError(errno, RS_RET_PARAM_ERROR,
 					"error: operatingStateFile already set to '%s' - "
-					"new valule ignored", operatingStateFile);
+					"new value ignored", operatingStateFile);
 			} else {
 				operatingStateFile = (uchar*) es_str2cstr(cnfparamvals[i].val.d.estr, NULL);
 				osf_open();
 			}
+		} else if(!strcmp(paramblk.descr[i].name, "security.abortonidresolutionfail")) {
+			loadConf->globals.abortOnIDResolutionFail = (int) cnfparamvals[i].val.d.n;
+			cnfparamvals[i].bUsed = TRUE;
 		}
 	}
 done:	return;
@@ -1445,6 +1454,14 @@ glblDoneLoadCnf(void)
 			glblInputTimeoutShutdown = (int) cnfparamvals[i].val.d.n;
 		} else if(!strcmp(paramblk.descr[i].name, "privdrop.group.keepsupplemental")) {
 			loadConf->globals.gidDropPrivKeepSupplemental = (int) cnfparamvals[i].val.d.n;
+		} else if(!strcmp(paramblk.descr[i].name, "privdrop.group.id")) {
+			loadConf->globals.gidDropPriv = (int) cnfparamvals[i].val.d.n;
+		} else if(!strcmp(paramblk.descr[i].name, "privdrop.group.name")) {
+			loadConf->globals.gidDropPriv = (int) cnfparamvals[i].val.d.n;
+		} else if(!strcmp(paramblk.descr[i].name, "privdrop.user.id")) {
+			loadConf->globals.uidDropPriv = (int) cnfparamvals[i].val.d.n;
+		} else if(!strcmp(paramblk.descr[i].name, "privdrop.user.name")) {
+			loadConf->globals.uidDropPriv = (int) cnfparamvals[i].val.d.n;
 		} else if(!strcmp(paramblk.descr[i].name, "security.abortonidresolutionfail")) {
 			loadConf->globals.abortOnIDResolutionFail = (int) cnfparamvals[i].val.d.n;
 		} else if(!strcmp(paramblk.descr[i].name, "net.acladdhostnameonfail")) {
