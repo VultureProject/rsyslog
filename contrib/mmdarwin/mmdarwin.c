@@ -917,10 +917,38 @@ could not extract field '%s' from message\n", pData->fieldList.name[i]);
 	DBGPRINTF("mmdarwin::doAction:: receiving from Darwin\n");
 	CHKiRet(receiveMsg(pWrkrData, &response, sizeof(response)));
 
-	unsigned int certitude = response.certitude_list[0];
-	DBGPRINTF("mmdarwin::doAction:: end of the transaction, certitude is %d\n", certitude);
+	// Default to ERROR if we receive no certitude 
+	unsigned int certitude = 101;
+	unsigned int* certs = NULL;
+	char* body = NULL;
 
+	if(response.certitude_size != 0) {
+		size_t certs_size = response.certitude_size * sizeof(unsigned int);
+		certs = (unsigned int*)malloc(certs_size);
+		memset(certs, 0, certs_size);
+		CHKiRet(receiveMsg(pWrkrData, certs, certs_size));
+		certitude = certs[0];
+	}
+
+	if(response.body_size != 0){
+		size_t body_size = response.body_size * sizeof(char);
+		body = (char*)malloc(body_size);
+		memset(body, 0, sizeof(body_size));
+		CHKiRet(receiveMsg(pWrkrData, body, body_size));
+	}
+
+	// Based on the knowledge we share only 1 certitude, this may be false in the future, we will have to change the next line
+	DBGPRINTF("mmdarwin::doAction:: end of the transaction, certitude is %d\n", certitude);
 	msgAddJSON(pMsg, (uchar *)pData->pCertitudeKey, json_object_new_int(certitude), 0, 0);
+
+	if(certs != NULL){
+		free(certs);
+		certs = NULL;
+	}
+	if(body != NULL) {
+		free(body);
+		body = NULL;
+	}
 
 finalize_it :
 	DBGPRINTF("mmdarwin::doAction:: finished processing log line\n");
