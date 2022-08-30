@@ -7,7 +7,7 @@
  * of the "old" message code without any modifications. However, it
  * helps to have things at the right place one we go to the meat of it.
  *
- * Copyright 2007-2020 Rainer Gerhards and Adiscon GmbH.
+ * Copyright 2007-2022 Rainer Gerhards and Adiscon GmbH.
  *
  * This file is part of the rsyslog runtime library.
  *
@@ -491,7 +491,7 @@ MsgSetRulesetByName(smsg_t * const pMsg, cstr_t *const rulesetName)
 
 	if(localRet != RS_RET_OK) {
 		LogError(0, localRet, "msg: ruleset '%s' could not be found and could not "
-			"be assgined to message object. This possibly leads to the message "
+			"be assigned to message object. This possibly leads to the message "
 			"being processed incorrectly. We cannot do anything against this, but "
 			"wanted to let you know.", rs_name);
 	}
@@ -1261,7 +1261,7 @@ static rsRetVal MsgSerialize(smsg_t *pThis, strm_t *pStrm)
 	objSerializePTR(pStrm, pCSAPPNAME, CSTR);
 	objSerializePTR(pStrm, pCSPROCID, CSTR);
 	objSerializePTR(pStrm, pCSMSGID, CSTR);
-	
+
 	objSerializePTR(pStrm, pszUUID, PSZ);
 
 	if(pThis->pRuleset != NULL) {
@@ -1481,7 +1481,7 @@ smsg_t *MsgAddRef(smsg_t * const pM)
 }
 
 
-/* This functions tries to aquire the PROCID from TAG. Its primary use is
+/* This functions tries to acquire the PROCID from TAG. Its primary use is
  * when a legacy syslog message has been received and should be forwarded as
  * syslog-protocol (or the PROCID is requested for any other reason).
  * In legacy syslog, the PROCID is considered to be the character sequence
@@ -1492,7 +1492,7 @@ smsg_t *MsgAddRef(smsg_t * const pM)
  * rgerhards, 2005-11-24
  * THIS MUST be called with the message lock locked.
  */
-static rsRetVal aquirePROCIDFromTAG(smsg_t * const pM)
+static rsRetVal acquirePROCIDFromTAG(smsg_t * const pM)
 {
 	register int i;
 	uchar *pszTag;
@@ -1514,7 +1514,7 @@ static rsRetVal aquirePROCIDFromTAG(smsg_t * const pM)
 		++i;
 	if(!(i < pM->iLenTAG))
 		return RS_RET_OK;	/* no [, so can not emulate... */
-	
+
 	++i; /* skip '[' */
 
 	/* now obtain the PROCID string... */
@@ -1557,7 +1557,7 @@ finalize_it:
  * rgerhards, 2005-10-19
  */
 static rsRetVal
-aquireProgramName(smsg_t * const pM)
+acquireProgramName(smsg_t * const pM)
 {
 	int i;
 	uchar *pszTag, *pszProgName;
@@ -1569,7 +1569,7 @@ aquireProgramName(smsg_t * const pM)
 	    ; (i < pM->iLenTAG) && isprint((int) pszTag[i])
 	      && (pszTag[i] != '\0') && (pszTag[i] != ':')
 	      && (pszTag[i] != '[')
-	      && (bPermitSlashInProgramname || (pszTag[i] != '/'))
+	      && (runConf->globals.parser.bPermitSlashInProgramname || (pszTag[i] != '/'))
 	    ; ++i)
 		; /* just search end of PROGNAME */
 	if(i < CONF_PROGNAME_BUFSIZE) {
@@ -1784,6 +1784,25 @@ getPRI(smsg_t * const pM)
 }
 
 
+static const char *
+formatISOWeekOrYear(enum tplFormatTypes eFmt, struct syslogTime *pTm)
+{
+	if(pTm->year >= 1970 && pTm->year <= 2099) {
+		int isoWeekYear;
+		int isoWeek;
+
+		isoWeek = getISOWeek(pTm, &isoWeekYear);
+
+		if (eFmt == tplFmtISOWeek) {
+			return two_digits[isoWeek];
+		} else {
+			return years[isoWeekYear - 1967];
+		}
+	} else {
+		return "YEAR OUT OF RANGE(1970-2099)";
+	}
+}
+
 const char *
 getTimeReported(smsg_t * const pM, enum tplFormatTypes eFmt)
 {
@@ -1878,6 +1897,9 @@ getTimeReported(smsg_t * const pM, enum tplFormatTypes eFmt)
 		return daysInYear[getOrdinal(&pM->tTIMESTAMP)];
 	case tplFmtWeek:
 		return two_digits[getWeek(&pM->tTIMESTAMP)];
+	case tplFmtISOWeek:
+	case tplFmtISOWeekYear:
+		return formatISOWeekOrYear(eFmt, &pM->tTIMESTAMP);
 	}
 	return "INVALID eFmt OPTION!";
 }
@@ -1972,6 +1994,10 @@ static const char *getTimeUTC(struct syslogTime *const __restrict__ pTmIn,
 		break;
 	case tplFmtWeek:
 		retbuf = strdup(two_digits[getWeek(pTm)]);
+		break;
+	case tplFmtISOWeek:
+	case tplFmtISOWeekYear:
+		retbuf = strdup(formatISOWeekOrYear(eFmt, pTm));
 		break;
 	}
 
@@ -2096,6 +2122,9 @@ getTimeGenerated(smsg_t *const __restrict__ pM,
 		return daysInYear[getOrdinal(pTm)];
 	case tplFmtWeek:
 		return two_digits[getWeek(pTm)];
+	case tplFmtISOWeek:
+	case tplFmtISOWeekYear:
+		return formatISOWeekOrYear(eFmt, pTm);
 	}
 	return "INVALID eFmt OPTION!";
 }
@@ -2243,7 +2272,7 @@ finalize_it:
 }
 
 
-/* check if we have a procid, and, if not, try to aquire/emulate it.
+/* check if we have a procid, and, if not, try to acquire/emulate it.
  * This must be called WITHOUT the message lock being held.
  * rgerhards, 2009-06-26
  */
@@ -2254,7 +2283,7 @@ static void preparePROCID(smsg_t * const pM, sbool bLockMutex)
 			MsgLock(pM);
 		/* re-query, things may have changed in the mean time... */
 		if(pM->pCSPROCID == NULL)
-			aquirePROCIDFromTAG(pM);
+			acquirePROCIDFromTAG(pM);
 		if(bLockMutex == LOCK_MUTEX)
 			MsgUnlock(pM);
 	}
@@ -2492,7 +2521,7 @@ tryEmulateTAG(smsg_t *const pM, const sbool bLockMutex)
 			MsgUnlock(pM);
 		return; /* done, no need to emulate */
 	}
-	
+
 	if(msgGetProtocolVersion(pM) == 1) {
 		if(!strcmp(getPROCID(pM, MUTEX_ALREADY_LOCKED), "-")) {
 			/* no process ID, use APP-NAME only */
@@ -2505,7 +2534,7 @@ tryEmulateTAG(smsg_t *const pM, const sbool bLockMutex)
 			bufTAG[sizeof(bufTAG)-1] = '\0'; /* just to make sure... */
 			MsgSetTAG(pM, bufTAG, lenTAG);
 		}
-		/* Signal change in TAG for aquireProgramName */
+		/* Signal change in TAG for acquireProgramName */
 		pM->iLenPROGNAME = -1;
 	}
 	if(bLockMutex == LOCK_MUTEX)
@@ -2633,7 +2662,7 @@ getProgramName(smsg_t *const pM, const sbool bLockMutex)
 			rs_size_t bufLen = -1;
 			getTAG(pM, &pRes, &bufLen, MUTEX_ALREADY_LOCKED);
 		}
-		aquireProgramName(pM);
+		acquireProgramName(pM);
 	}
 
 	if(bLockMutex == LOCK_MUTEX) {
@@ -2645,7 +2674,7 @@ getProgramName(smsg_t *const pM, const sbool bLockMutex)
 
 
 
-/* check if we have a APPNAME, and, if not, try to aquire/emulate it.
+/* check if we have a APPNAME, and, if not, try to acquire/emulate it.
  * rgerhards, 2009-06-26
  */
 static void ATTR_NONNULL(1)
@@ -2905,7 +2934,7 @@ void ATTR_NONNULL()
 MsgTruncateToMaxSize(smsg_t *const pThis)
 {
 	ISOBJ_TYPE_assert(pThis, msg);
-	const int maxMsgSize = glblGetMaxLine();
+	const int maxMsgSize = glblGetMaxLine(runConf);
 	assert(pThis->iLenRawMsg > maxMsgSize);
 
 	const int deltaSize = pThis->iLenRawMsg - maxMsgSize;
@@ -3261,13 +3290,17 @@ finalize_it:
 }
 
 
-/* Encode a JSON value and add it to provided string. Note that
- * the string object may be NULL. In this case, it is created
- * if and only if escaping is needed. if escapeAll is false, previously
- * escaped strings are left as is
+/* Helper for jsonAddVal(), to be called onces we know there are actually
+ * json escapes inside the string. If so, this function takes over.
+ * Splitting the functions permits us to make some performance optimizations.
+ * For further details, see jsonAddVal().
  */
-static rsRetVal
-jsonAddVal(uchar *pSrc, unsigned buflen, es_str_t **dst, int escapeAll)
+static rsRetVal ATTR_NONNULL(1, 4)
+jsonAddVal_escaped(uchar *const pSrc,
+	const unsigned buflen,
+	const unsigned len_none_escaped_head,
+	es_str_t **dst,
+	const int escapeAll)
 {
 	unsigned char c;
 	es_size_t i;
@@ -3275,39 +3308,69 @@ jsonAddVal(uchar *pSrc, unsigned buflen, es_str_t **dst, int escapeAll)
 	unsigned ni;
 	unsigned char nc;
 	int j;
+	uchar wrkbuf[100000];
+	size_t dst_realloc_size;
+	size_t dst_size;
+	uchar *dst_base;
+	uchar *dst_w;
+	uchar *newbuf;
 	DEFiRet;
 
-	for(i = 0 ; i < buflen ; ++i) {
+	assert(len_none_escaped_head <= buflen);
+	/* first copy over unescaped head string */
+	if(len_none_escaped_head+10 > sizeof(wrkbuf)) {
+		dst_size = 2 * len_none_escaped_head;
+		CHKmalloc(dst_base = malloc(dst_size));
+	} else {
+		dst_size = sizeof(wrkbuf);
+		dst_base = wrkbuf;
+	}
+	dst_realloc_size = dst_size - 10; /* some buffer for escaping */
+	dst_w = dst_base;
+	memcpy(dst_w, pSrc, len_none_escaped_head);
+	dst_w += len_none_escaped_head;
+
+	/* now do the escaping */
+	for(i = len_none_escaped_head ; i < buflen ; ++i) {
+		const size_t dst_offset = dst_w - dst_base;
+		if(dst_offset >= dst_realloc_size) {
+			const size_t new_size = 2 * dst_size;
+			if(dst_base == wrkbuf) {
+				CHKmalloc(newbuf = malloc(new_size));
+				memcpy(newbuf, dst_base, dst_offset);
+			} else {
+				CHKmalloc(newbuf = realloc(dst_base, new_size));
+			}
+			dst_size = new_size;
+			dst_realloc_size = new_size - 10; /* some buffer for escaping */
+			dst_base = newbuf;
+			dst_w = dst_base + dst_offset;
+		}
 		c = pSrc[i];
-		if(   (c >= 0x23 && c <= 0x2e)
-		   || (c >= 0x30 && c <= 0x5b)
+		if(   (c >= 0x30 && c <= 0x5b)
+		   || (c >= 0x23 && c <= 0x2e)
 		   || (c >= 0x5d /* && c <= 0x10FFFF*/)
 		   || c == 0x20 || c == 0x21) {
 			/* no need to escape */
-			if(*dst != NULL)
-				es_addChar(dst, c);
+			*dst_w++ = c;
 		} else {
-			if(*dst == NULL) {
-				if(i == 0) {
-					/* we hope we have only few escapes... */
-					*dst = es_newStr(buflen+10);
-				} else {
-					*dst = es_newStrFromBuf((char*)pSrc, i);
-				}
-				if(*dst == NULL) {
-					ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
-				}
-			}
 			/* we must escape, try RFC4627-defined special sequences first */
 			switch(c) {
 			case '\0':
-				es_addBuf(dst, "\\u0000", 6);
+				*dst_w++ = '\\';
+				*dst_w++ = 'u';
+				*dst_w++ = '0';
+				*dst_w++ = '0';
+				*dst_w++ = '0';
+				*dst_w++ = '0';
 				break;
 			case '\"':
-				es_addBuf(dst, "\\\"", 2);
+				*dst_w++ = '\\';
+				*dst_w++ = '"';
 				break;
 			case '/':
-				es_addBuf(dst, "\\/", 2);
+				*dst_w++ = '\\';
+				*dst_w++ = '/';
 				break;
 			case '\\':
 				if (escapeAll == RSFALSE) {
@@ -3318,31 +3381,35 @@ jsonAddVal(uchar *pSrc, unsigned buflen, es_str_t **dst, int escapeAll)
 						/* Attempt to not double encode */
 						if (   nc == '"' || nc == '/' || nc == '\\' || nc == 'b' || nc == 'f'
 							|| nc == 'n' || nc == 'r' || nc == 't' || nc == 'u') {
-
-							es_addChar(dst, c);
-							es_addChar(dst, nc);
+							*dst_w++ = c;
+							*dst_w++ = nc;
 							i = ni;
 							break;
 						}
 					}
 				}
-
-				es_addBuf(dst, "\\\\", 2);
+				*dst_w++ = '\\';
+				*dst_w++ = '\\';
 				break;
 			case '\010':
-				es_addBuf(dst, "\\b", 2);
+				*dst_w++ = '\\';
+				*dst_w++ = 'b';
 				break;
 			case '\014':
-				es_addBuf(dst, "\\f", 2);
+				*dst_w++ = '\\';
+				*dst_w++ = 'f';
 				break;
 			case '\n':
-				es_addBuf(dst, "\\n", 2);
+				*dst_w++ = '\\';
+				*dst_w++ = 'n';
 				break;
 			case '\r':
-				es_addBuf(dst, "\\r", 2);
+				*dst_w++ = '\\';
+				*dst_w++ = 'r';
 				break;
 			case '\t':
-				es_addBuf(dst, "\\t", 2);
+				*dst_w++ = '\\';
+				*dst_w++ = 't';
 				break;
 			default:
 				/* TODO : proper Unicode encoding (see header comment) */
@@ -3350,11 +3417,53 @@ jsonAddVal(uchar *pSrc, unsigned buflen, es_str_t **dst, int escapeAll)
 					numbuf[3-j] = hexdigit[c % 16];
 					c = c / 16;
 				}
-				es_addBuf(dst, "\\u", 2);
-				es_addBuf(dst, numbuf, 4);
+				*dst_w++ = '\\';
+				*dst_w++ = 'u';
+				*dst_w++ = numbuf[0];
+				*dst_w++ = numbuf[1];
+				*dst_w++ = numbuf[2];
+				*dst_w++ = numbuf[3];
 				break;
 			}
 		}
+	}
+	if(*dst == NULL) {
+		*dst = es_newStrFromBuf((char *) dst_base, dst_w - dst_base);
+	} else {
+		es_addBuf(dst, (const char *) dst_base, dst_w - dst_base);
+	}
+finalize_it:
+	if(dst_base != wrkbuf) {
+		free(dst_base);
+	}
+	RETiRet;
+}
+
+
+/* Encode a JSON value and add it to provided string. Note that
+ * the string object may be NULL. In this case, it is created
+ * if and only if escaping is needed. if escapeAll is false, previously
+ * escaped strings are left as is
+ */
+static rsRetVal ATTR_NONNULL(1, 3)
+jsonAddVal(uchar *const pSrc, const unsigned buflen, es_str_t **dst, const int escapeAll)
+{
+	es_size_t i;
+	DEFiRet;
+
+	for(i = 0 ; i < buflen ; ++i) {
+		const uchar c = pSrc[i];
+		if(! (   (c >= 0x30 && c <= 0x5b)
+		      || (c >= 0x23 && c <= 0x2e)
+		      || (c >= 0x5d /* && c <= 0x10FFFF*/)
+		      || c == 0x20 || c == 0x21)
+		     ) {
+			iRet = jsonAddVal_escaped(pSrc, buflen, i, dst, escapeAll);
+			FINALIZE;
+		}
+	}
+	if(*dst != NULL) {
+		es_addBuf(dst, (const char *) pSrc, buflen);
 	}
 finalize_it:
 	RETiRet;
@@ -3914,12 +4023,12 @@ uchar *MsgGetProp(smsg_t *__restrict__ const pMsg, struct templateEntry *__restr
 		*pPropLen = (bufLen == -1) ? (int) ustrlen(pRes) : bufLen;
 		return pRes;
 	}
-	
+
 	/* Now check if we need to make "temporary" transformations (these
 	 * are transformations that do not go back into the message -
 	 * memory must be allocated for them!).
 	 */
-	
+
 	/* substring extraction */
 	/* first we check if we need to extract by field number
 	 * rgerhards, 2005-12-22

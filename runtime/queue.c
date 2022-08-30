@@ -62,6 +62,7 @@
 #include "unicode-helper.h"
 #include "statsobj.h"
 #include "parserif.h"
+#include "rsconf.h"
 
 #ifdef OS_SOLARIS
 #	include <sched.h>
@@ -83,17 +84,6 @@ unsigned int iOverallQueueSize = 0;
 #endif
 
 #define OVERSIZE_QUEUE_WATERMARK 500000 /* when is a queue considered to be "overly large"? */
-
-/* overridable default values (via global config) */
-int actq_dflt_toQShutdown = 10;		/* queue shutdown */
-int actq_dflt_toActShutdown = 1000;	/* action shutdown (in phase 2) */
-int actq_dflt_toEnq = 2000;		/* timeout for queue enque */
-int actq_dflt_toWrkShutdown = 60000;	/* timeout for worker thread shutdown */
-
-int ruleset_dflt_toQShutdown = 1500;	/* queue shutdown */
-int ruleset_dflt_toActShutdown = 1000;	/* action shutdown (in phase 2) */
-int ruleset_dflt_toEnq = 2000;		/* timeout for queue enque */
-int ruleset_dflt_toWrkShutdown = 60000;	/* timeout for worker thread shutdown */
 
 
 /* forward-definitions */
@@ -508,7 +498,7 @@ StartDA(qqueue_t *pThis)
 		pThis->cryprovNameFull = NULL;
 	}
 
-	iRet = qqueueStart(pThis->pqDA);
+	iRet = qqueueStart(runConf, pThis->pqDA);
 	/* file not found is expected, that means it is no previous QIF available */
 	if(iRet != RS_RET_OK && iRet != RS_RET_FILE_NOT_FOUND) {
 		errno = 0; /* else an errno is shown in errmsg! */
@@ -1482,7 +1472,7 @@ rsRetVal qqueueConstruct(qqueue_t **ppThis, queueType_t qType, int iWorkerThread
 {
 	DEFiRet;
 	qqueue_t *pThis;
-	const uchar *const workDir = glblGetWorkDirRaw();
+	const uchar *const workDir = glblGetWorkDirRaw(ourConf);
 
 	assert(ppThis != NULL);
 	assert(pConsumer != NULL);
@@ -1512,6 +1502,7 @@ rsRetVal qqueueConstruct(qqueue_t **ppThis, queueType_t qType, int iWorkerThread
 	pThis->iDeqtWinToHr = 25; /* disable time-windowed dequeuing by default */
 	pThis->iDeqBatchSize = 8; /* conservative default, should still provide good performance */
 	pThis->iMinDeqBatchSize = 0; /* conservative default, should still provide good performance */
+	pThis->isRunning = 0;
 
 	pThis->pszFilePrefix = NULL;
 	pThis->qType = qType;
@@ -1549,10 +1540,10 @@ qqueueSetDefaultsActionQueue(qqueue_t *pThis)
 	pThis->iMaxFileSize = 1024*1024;
 	pThis->iPersistUpdCnt = 0;		/* persist queue info every n updates */
 	pThis->bSyncQueueFiles = 0;
-	pThis->toQShutdown = actq_dflt_toQShutdown;	/* queue shutdown */
-	pThis->toActShutdown = actq_dflt_toActShutdown;	/* action shutdown (in phase 2) */
-	pThis->toEnq = actq_dflt_toEnq;			/* timeout for queue enque */
-	pThis->toWrkShutdown = actq_dflt_toWrkShutdown;	/* timeout for worker thread shutdown */
+	pThis->toQShutdown = loadConf->globals.actq_dflt_toQShutdown;	/* queue shutdown */
+	pThis->toActShutdown = loadConf->globals.actq_dflt_toActShutdown;	/* action shutdown (in phase 2) */
+	pThis->toEnq = loadConf->globals.actq_dflt_toEnq;			/* timeout for queue enque */
+	pThis->toWrkShutdown = loadConf->globals.actq_dflt_toWrkShutdown;	/* timeout for worker thread shutdown */
 	pThis->iMinMsgsPerWrkr = -1;		/* minimum messages per worker needed to start a new one */
 	pThis->bSaveOnShutdown = 1;		/* save queue on shutdown (when DA enabled)? */
 	pThis->sizeOnDiskMax = 0;		/* unlimited */
@@ -1582,10 +1573,10 @@ qqueueSetDefaultsRulesetQueue(qqueue_t *pThis)
 	pThis->iMaxFileSize = 16*1024*1024;
 	pThis->iPersistUpdCnt = 0;		/* persist queue info every n updates */
 	pThis->bSyncQueueFiles = 0;
-	pThis->toQShutdown = ruleset_dflt_toQShutdown;
-	pThis->toActShutdown = ruleset_dflt_toActShutdown;
-	pThis->toEnq = ruleset_dflt_toEnq;
-	pThis->toWrkShutdown = ruleset_dflt_toWrkShutdown;
+	pThis->toQShutdown = ourConf->globals.ruleset_dflt_toQShutdown;
+	pThis->toActShutdown = ourConf->globals.ruleset_dflt_toActShutdown;
+	pThis->toEnq = ourConf->globals.ruleset_dflt_toEnq;
+	pThis->toWrkShutdown = ourConf->globals.ruleset_dflt_toWrkShutdown;
 	pThis->iMinMsgsPerWrkr = -1;		/* minimum messages per worker needed to start a new one */
 	pThis->bSaveOnShutdown = 1;		/* save queue on shutdown (when DA enabled)? */
 	pThis->sizeOnDiskMax = 0;		/* unlimited */
@@ -2179,7 +2170,7 @@ finalize_it:
 	DBGPRINTF("regular consumer finished, iret=%d, szlog %d sz phys %d\n", iRet,
 	          getLogicalQueueSize(pThis), getPhysicalQueueSize(pThis));
 
-	/* now we are done, but potentially need to re-aquire the mutex */
+	/* now we are done, but potentially need to re-acquire the mutex */
 	if(bNeedReLock)
 		d_pthread_mutex_lock(pThis->mut);
 
@@ -2222,7 +2213,7 @@ ConsumerDA(qqueue_t *pThis, wti_t *pWti)
 		iRet = qqueueEnqMsg(pThis->pqDA, eFLOWCTL_NO_DELAY, MsgAddRef(pWti->batch.pElem[i].pMsg));
 		if(iRet != RS_RET_OK) {
 			if(iRet == RS_RET_ERR_QUEUE_EMERGENCY) {
-				/* Queue emergency error occured */
+				/* Queue emergency error occurred */
 				DBGOPRINT((obj_t*) pThis, "ConsumerDA:qqueueEnqMsg caught RS_RET_ERR_QUEUE_EMERGENCY,"
 						"aborting loop.\n");
 				FINALIZE;
@@ -2266,7 +2257,7 @@ finalize_it:
 		DBGOPRINT((obj_t*) pThis, "ConsumerDA:qqueueEnqMsg returns with iRet %d\n", iRet);
 	}
 
-	/* now we are done, but potentially need to re-aquire the mutex */
+	/* now we are done, but potentially need to re-acquire the mutex */
 	if(bNeedReLock)
 		d_pthread_mutex_lock(pThis->mut);
 
@@ -2333,17 +2324,22 @@ GetDeqBatchSize(qqueue_t *pThis, int *pVal)
  * before.
  */
 rsRetVal
-qqueueStart(qqueue_t *pThis) /* this is the ConstructionFinalizer */
+qqueueStart(rsconf_t *cnf, qqueue_t *pThis) /* this is the ConstructionFinalizer */
 {
 	DEFiRet;
 	uchar pszBuf[64];
 	uchar pszQIFNam[MAXFNAME];
 	int wrk;
-	int goodval; /* a "good value" to use for comparisons (different objects) */
 	uchar *qName;
 	size_t lenBuf;
 
 	assert(pThis != NULL);
+
+	/* do not modify the queue if it's already running(happens when dynamic config reload is invoked
+	 * and the queue is used in the new config as well)
+	 */
+	if (pThis->isRunning)
+		FINALIZE;
 
 	dbgoprint((obj_t*) pThis, "starting queue\n");
 
@@ -2351,7 +2347,7 @@ qqueueStart(qqueue_t *pThis) /* this is the ConstructionFinalizer */
 		/* note: we need to pick the path so late as we do not have
 		 *       the workdir during early config load
 		 */
-		if((pThis->pszSpoolDir = (uchar*) strdup((char*)glbl.GetWorkDir())) == NULL)
+		if((pThis->pszSpoolDir = (uchar*) strdup((char*)glbl.GetWorkDir(cnf))) == NULL)
 			ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
 		pThis->lenSpoolDir = ustrlen(pThis->pszSpoolDir);
 	}
@@ -2400,116 +2396,6 @@ qqueueStart(qqueue_t *pThis) /* this is the ConstructionFinalizer */
 			pThis->MultiEnq = qqueueMultiEnqObjDirect;
 			pThis->qDel = NULL;
 			break;
-	}
-
-	if(pThis->iMaxQueueSize < 100
-	   && (pThis->qType == QUEUETYPE_LINKEDLIST || pThis->qType == QUEUETYPE_FIXED_ARRAY)) {
-		LogMsg(0, RS_RET_OK_WARN, LOG_WARNING, "Note: queue.size=\"%d\" is very "
-			"low and can lead to unpredictable results. See also "
-			"https://www.rsyslog.com/lower-bound-for-queue-sizes/",
-			pThis->iMaxQueueSize);
-	}
-
-	/* we need to do a quick check if our water marks are set plausible. If not,
-	 * we correct the most important shortcomings.
-	 */
-	goodval = (pThis->iMaxQueueSize / 100) * 60;
-	if(pThis->iHighWtrMrk != -1 && pThis->iHighWtrMrk < goodval) {
-		LogMsg(0, RS_RET_CONF_PARSE_WARNING, LOG_WARNING, "queue \"%s\": high water mark "
-				"is set quite low at %d. You should only set it below "
-				"60%% (%d) if you have a good reason for this.",
-				obj.GetName((obj_t*) pThis), pThis->iHighWtrMrk, goodval);
-	}
-
-	if(pThis->iNumWorkerThreads > 1) {
-		goodval = (pThis->iMaxQueueSize / 100) * 10;
-		if(pThis->iMinMsgsPerWrkr != -1 && pThis->iMinMsgsPerWrkr < goodval) {
-			LogMsg(0, RS_RET_CONF_PARSE_WARNING, LOG_WARNING, "queue \"%s\": "
-					"queue.workerThreadMinimumMessage "
-					"is set quite low at %d. You should only set it below "
-					"10%% (%d) if you have a good reason for this.",
-					obj.GetName((obj_t*) pThis), pThis->iMinMsgsPerWrkr, goodval);
-		}
-	}
-
-	if(pThis->iDiscardMrk > pThis->iMaxQueueSize) {
-		LogError(0, RS_RET_PARAM_ERROR, "error: queue \"%s\": "
-				"queue.discardMark %d is set larger than queue.size",
-				obj.GetName((obj_t*) pThis), pThis->iDiscardMrk);
-	}
-
-	goodval = (pThis->iMaxQueueSize / 100) * 80;
-	if(pThis->iDiscardMrk != -1 && pThis->iDiscardMrk < goodval) {
-		LogMsg(0, RS_RET_CONF_PARSE_WARNING, LOG_WARNING,
-				"queue \"%s\": queue.discardMark "
-				"is set quite low at %d. You should only set it below "
-				"80%% (%d) if you have a good reason for this.",
-				obj.GetName((obj_t*) pThis), pThis->iDiscardMrk, goodval);
-	}
-
-	if(pThis->pszFilePrefix != NULL) { /* This means we have a potential DA queue */
-		if(pThis->iFullDlyMrk != -1 && pThis->iFullDlyMrk < pThis->iHighWtrMrk) {
-			LogMsg(0, RS_RET_CONF_WRN_FULLDLY_BELOW_HIGHWTR, LOG_WARNING,
-					"queue \"%s\": queue.fullDelayMark "
-					"is set below high water mark. This will result in DA mode "
-					" NOT being activated for full delayable messages: In many "
-					"cases this is a configuration error, please check if this "
-					"is really what you want",
-					obj.GetName((obj_t*) pThis));
-		}
-	}
-
-	/* now come parameter corrections and defaults */
-	if(pThis->iHighWtrMrk < 2 || pThis->iHighWtrMrk > pThis->iMaxQueueSize) {
-		pThis->iHighWtrMrk  = (pThis->iMaxQueueSize / 100) * 90;
-		if(pThis->iHighWtrMrk == 0) { /* guard against very low max queue sizes! */
-			pThis->iHighWtrMrk = pThis->iMaxQueueSize;
-		}
-	}
-	if(   pThis->iLowWtrMrk < 2
-	   || pThis->iLowWtrMrk > pThis->iMaxQueueSize
-	   || pThis->iLowWtrMrk > pThis->iHighWtrMrk ) {
-		pThis->iLowWtrMrk  = (pThis->iMaxQueueSize / 100) * 70;
-		if(pThis->iLowWtrMrk == 0) {
-			pThis->iLowWtrMrk = 1;
-		}
-	}
-
-	if((pThis->iMinMsgsPerWrkr < 1
-	   || pThis->iMinMsgsPerWrkr > pThis->iMaxQueueSize) ) {
-		pThis->iMinMsgsPerWrkr  = pThis->iMaxQueueSize / pThis->iNumWorkerThreads;
-	}
-
-	if(pThis->iFullDlyMrk == -1 || pThis->iFullDlyMrk > pThis->iMaxQueueSize) {
-		pThis->iFullDlyMrk  = (pThis->iMaxQueueSize / 100) * 97;
-		if(pThis->iFullDlyMrk == 0) {
-			pThis->iFullDlyMrk =
-				(pThis->iMaxQueueSize == 1) ? 1 : pThis->iMaxQueueSize - 1;
-		}
-	}
-
-	if(pThis->iLightDlyMrk == 0) {
-		pThis->iLightDlyMrk = pThis->iMaxQueueSize;
-	}
-
-	if(pThis->iLightDlyMrk == -1 || pThis->iLightDlyMrk > pThis->iMaxQueueSize) {
-		pThis->iLightDlyMrk = (pThis->iMaxQueueSize / 100) * 70;
-		if(pThis->iLightDlyMrk == 0) {
-			pThis->iLightDlyMrk =
-				(pThis->iMaxQueueSize == 1) ? 1 : pThis->iMaxQueueSize - 1;
-		}
-	}
-
-	if(pThis->iDiscardMrk < 1 || pThis->iDiscardMrk > pThis->iMaxQueueSize) {
-		pThis->iDiscardMrk  = (pThis->iMaxQueueSize / 100) * 98;
-		if(pThis->iDiscardMrk == 0) {
-			/* for very small queues, we disable this by default */
-			pThis->iDiscardMrk = pThis->iMaxQueueSize;
-		}
-	}
-
-	if(pThis->iMaxQueueSize > 0 && pThis->iDeqBatchSize > pThis->iMaxQueueSize) {
-		pThis->iDeqBatchSize = pThis->iMaxQueueSize;
 	}
 
 	/* finalize some initializations that could not yet be done because it is
@@ -2631,6 +2517,8 @@ finalize_it:
 		/* note: a child uses it's parent mutex, so do not delete it! */
 		if(pThis->pqParent == NULL && pThis->mut != NULL)
 			free(pThis->mut);
+	} else {
+		pThis->isRunning = 1;
 	}
 	RETiRet;
 }
@@ -2820,7 +2708,7 @@ DoSaveOnShutdown(qqueue_t *pThis)
 BEGINobjDestruct(qqueue) /* be sure to specify the object type also in END and CODESTART macros! */
 CODESTARTobjDestruct(qqueue)
 	DBGOPRINT((obj_t*) pThis, "shutdown: begin to destruct queue\n");
-	if(glblShutdownQueueDoubleSize) {
+	if(ourConf->globals.shutdownQueueDoubleSize) {
 		pThis->iHighWtrMrk *= 2;
 		pThis->iMaxQueueSize *= 2;
 	}
@@ -3336,6 +3224,122 @@ finalize_it:
 	RETiRet;
 }
 
+void
+qqueueCorrectParams(qqueue_t *pThis)
+{
+	int goodval; /* a "good value" to use for comparisons (different objects) */
+
+	if(pThis->iMaxQueueSize < 100
+	   && (pThis->qType == QUEUETYPE_LINKEDLIST || pThis->qType == QUEUETYPE_FIXED_ARRAY)) {
+		LogMsg(0, RS_RET_OK_WARN, LOG_WARNING, "Note: queue.size=\"%d\" is very "
+			"low and can lead to unpredictable results. See also "
+			"https://www.rsyslog.com/lower-bound-for-queue-sizes/",
+			pThis->iMaxQueueSize);
+	}
+
+	/* we need to do a quick check if our water marks are set plausible. If not,
+	 * we correct the most important shortcomings.
+	 */
+	goodval = (pThis->iMaxQueueSize / 100) * 60;
+	if(pThis->iHighWtrMrk != -1 && pThis->iHighWtrMrk < goodval) {
+		LogMsg(0, RS_RET_CONF_PARSE_WARNING, LOG_WARNING, "queue \"%s\": high water mark "
+				"is set quite low at %d. You should only set it below "
+				"60%% (%d) if you have a good reason for this.",
+				obj.GetName((obj_t*) pThis), pThis->iHighWtrMrk, goodval);
+	}
+
+	if(pThis->iNumWorkerThreads > 1) {
+		goodval = (pThis->iMaxQueueSize / 100) * 10;
+		if(pThis->iMinMsgsPerWrkr != -1 && pThis->iMinMsgsPerWrkr < goodval) {
+			LogMsg(0, RS_RET_CONF_PARSE_WARNING, LOG_WARNING, "queue \"%s\": "
+					"queue.workerThreadMinimumMessage "
+					"is set quite low at %d. You should only set it below "
+					"10%% (%d) if you have a good reason for this.",
+					obj.GetName((obj_t*) pThis), pThis->iMinMsgsPerWrkr, goodval);
+		}
+	}
+
+	if(pThis->iDiscardMrk > pThis->iMaxQueueSize) {
+		LogError(0, RS_RET_PARAM_ERROR, "error: queue \"%s\": "
+				"queue.discardMark %d is set larger than queue.size",
+				obj.GetName((obj_t*) pThis), pThis->iDiscardMrk);
+	}
+
+	goodval = (pThis->iMaxQueueSize / 100) * 80;
+	if(pThis->iDiscardMrk != -1 && pThis->iDiscardMrk < goodval) {
+		LogMsg(0, RS_RET_CONF_PARSE_WARNING, LOG_WARNING,
+				"queue \"%s\": queue.discardMark "
+				"is set quite low at %d. You should only set it below "
+				"80%% (%d) if you have a good reason for this.",
+				obj.GetName((obj_t*) pThis), pThis->iDiscardMrk, goodval);
+	}
+
+	if(pThis->pszFilePrefix != NULL) { /* This means we have a potential DA queue */
+		if(pThis->iFullDlyMrk != -1 && pThis->iFullDlyMrk < pThis->iHighWtrMrk) {
+			LogMsg(0, RS_RET_CONF_WRN_FULLDLY_BELOW_HIGHWTR, LOG_WARNING,
+					"queue \"%s\": queue.fullDelayMark "
+					"is set below high water mark. This will result in DA mode "
+					" NOT being activated for full delayable messages: In many "
+					"cases this is a configuration error, please check if this "
+					"is really what you want",
+					obj.GetName((obj_t*) pThis));
+		}
+	}
+
+	/* now come parameter corrections and defaults */
+	if(pThis->iHighWtrMrk < 2 || pThis->iHighWtrMrk > pThis->iMaxQueueSize) {
+		pThis->iHighWtrMrk  = (pThis->iMaxQueueSize / 100) * 90;
+		if(pThis->iHighWtrMrk == 0) { /* guard against very low max queue sizes! */
+			pThis->iHighWtrMrk = pThis->iMaxQueueSize;
+		}
+	}
+	if(   pThis->iLowWtrMrk < 2
+	   || pThis->iLowWtrMrk > pThis->iMaxQueueSize
+	   || pThis->iLowWtrMrk > pThis->iHighWtrMrk ) {
+		pThis->iLowWtrMrk  = (pThis->iMaxQueueSize / 100) * 70;
+		if(pThis->iLowWtrMrk == 0) {
+			pThis->iLowWtrMrk = 1;
+		}
+	}
+
+	if((pThis->iMinMsgsPerWrkr < 1
+	   || pThis->iMinMsgsPerWrkr > pThis->iMaxQueueSize) ) {
+		pThis->iMinMsgsPerWrkr  = pThis->iMaxQueueSize / pThis->iNumWorkerThreads;
+	}
+
+	if(pThis->iFullDlyMrk == -1 || pThis->iFullDlyMrk > pThis->iMaxQueueSize) {
+		pThis->iFullDlyMrk  = (pThis->iMaxQueueSize / 100) * 97;
+		if(pThis->iFullDlyMrk == 0) {
+			pThis->iFullDlyMrk =
+				(pThis->iMaxQueueSize == 1) ? 1 : pThis->iMaxQueueSize - 1;
+		}
+	}
+
+	if(pThis->iLightDlyMrk == 0) {
+		pThis->iLightDlyMrk = pThis->iMaxQueueSize;
+	}
+
+	if(pThis->iLightDlyMrk == -1 || pThis->iLightDlyMrk > pThis->iMaxQueueSize) {
+		pThis->iLightDlyMrk = (pThis->iMaxQueueSize / 100) * 70;
+		if(pThis->iLightDlyMrk == 0) {
+			pThis->iLightDlyMrk =
+				(pThis->iMaxQueueSize == 1) ? 1 : pThis->iMaxQueueSize - 1;
+		}
+	}
+
+	if(pThis->iDiscardMrk < 1 || pThis->iDiscardMrk > pThis->iMaxQueueSize) {
+		pThis->iDiscardMrk  = (pThis->iMaxQueueSize / 100) * 98;
+		if(pThis->iDiscardMrk == 0) {
+			/* for very small queues, we disable this by default */
+			pThis->iDiscardMrk = pThis->iMaxQueueSize;
+		}
+	}
+
+	if(pThis->iMaxQueueSize > 0 && pThis->iDeqBatchSize > pThis->iMaxQueueSize) {
+		pThis->iDeqBatchSize = pThis->iMaxQueueSize;
+	}
+}
+
 /* apply all params from param block to queue. Must be called before
  * finalizing. This supports the v6 config system. Defaults were already
  * set during queue creation. The pvals object is destructed by this
@@ -3488,6 +3492,43 @@ qqueueApplyCnfParam(qqueue_t *pThis, struct nvlst *lst)
 	cnfparamvalsDestruct(pvals, &pblk);
 finalize_it:
 	RETiRet;
+}
+
+/* return 1 if the content of two qqueue_t structs equal */
+int
+queuesEqual(qqueue_t *pOld, qqueue_t *pNew)
+{
+	return (
+		NUM_EQUALS(qType) &&
+		NUM_EQUALS(iMaxQueueSize) &&
+		NUM_EQUALS(iDeqBatchSize) &&
+		NUM_EQUALS(iMinDeqBatchSize) &&
+		NUM_EQUALS(toMinDeqBatchSize) &&
+		NUM_EQUALS(sizeOnDiskMax) &&
+		NUM_EQUALS(iHighWtrMrk) &&
+		NUM_EQUALS(iLowWtrMrk) &&
+		NUM_EQUALS(iFullDlyMrk) &&
+		NUM_EQUALS(iLightDlyMrk) &&
+		NUM_EQUALS(iDiscardMrk) &&
+		NUM_EQUALS(iDiscardSeverity) &&
+		NUM_EQUALS(iPersistUpdCnt) &&
+		NUM_EQUALS(bSyncQueueFiles) &&
+		NUM_EQUALS(iNumWorkerThreads) &&
+		NUM_EQUALS(toQShutdown) &&
+		NUM_EQUALS(toActShutdown) &&
+		NUM_EQUALS(toEnq) &&
+		NUM_EQUALS(toWrkShutdown) &&
+		NUM_EQUALS(iMinMsgsPerWrkr) &&
+		NUM_EQUALS(iMaxFileSize) &&
+		NUM_EQUALS(bSaveOnShutdown) &&
+		NUM_EQUALS(iDeqSlowdown) &&
+		NUM_EQUALS(iDeqtWinFromHr) &&
+		NUM_EQUALS(iDeqtWinToHr) &&
+		NUM_EQUALS(iSmpInterval) &&
+		NUM_EQUALS(takeFlowCtlFromMsg) &&
+		USTR_EQUALS(pszFilePrefix) &&
+		USTR_EQUALS(cryprovName)
+	);
 }
 
 

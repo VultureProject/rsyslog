@@ -10,7 +10,7 @@
  *
  * File begun on 2010-08-10 by RGerhards
  *
- * Copyright 2007-2018 Rainer Gerhards and Adiscon GmbH.
+ * Copyright 2007-2022 Rainer Gerhards and Adiscon GmbH.
  *
  * This file is part of rsyslog.
  *
@@ -58,6 +58,9 @@
 #include <regex.h>
 #if HAVE_FCNTL_H
 #include <fcntl.h>
+#endif
+#ifdef HAVE_SYS_PRCTL_H
+#  include <sys/prctl.h>
 #endif
 #include "rsyslog.h"
 #include "cfsysline.h"
@@ -317,6 +320,8 @@ struct ptcpsess_s {
 	uchar *pMsg_save;	/* message (fragment) save area in regex framing mode */
 	prop_t *peerName;	/* host name we received messages from */
 	prop_t *peerIP;
+	const uchar *startRegex;/* cache for performance reasons */
+	int iAddtlFrameDelim;	/* cache for performance reasons */
 };
 
 
@@ -346,6 +351,7 @@ struct ptcplstn_s {
 static struct wrkrInfo_s {
 	pthread_t tid;	/* the worker's thread ID */
 	long long unsigned numCalled;	/* how often was this called */
+	int wrkrIdx;	/* index for this worker - shortcut for thread name */
 } *wrkrInfo;
 static int wrkrRunning;
 
@@ -393,18 +399,28 @@ static rsRetVal resetConfigVariables(uchar __attribute__((unused)) *pp, void __a
 static rsRetVal addLstn(ptcpsrv_t *pSrv, int sock, int isIPv6);
 
 
+/* function to suppress TSAN known-good case
+ * We do not use a mutex an epd, but we do always access it in
+ * pure sequence. Adding a mutex just to cover this "cosmetic"
+ * would result in uncesseary performance penalty.
+ */
+static void ATTR_NONNULL()
+imptcp_destruct_epd(ptcpsess_t *const pSess) {
+	free(pSess->epd);
+	pSess->epd = NULL;
+}
+
 /* some simple constructors/destructors */
-static void
-destructSess(ptcpsess_t *pSess)
+static void ATTR_NONNULL()
+destructSess(ptcpsess_t *const pSess)
 {
+	imptcp_destruct_epd(pSess);
 	free(pSess->pMsg_save);
 	free(pSess->pMsg);
-	free(pSess->epd);
 	prop.Destruct(&pSess->peerName);
 	prop.Destruct(&pSess->peerIP);
 	/* TODO: make these inits compile-time switch depending: */
 	pSess->pMsg = NULL;
-	pSess->epd = NULL;
 	free(pSess);
 }
 
@@ -549,7 +565,7 @@ startupSrv(ptcpsrv_t *pSrv)
 
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_flags = AI_PASSIVE;
-	hints.ai_family = glbl.GetDefPFFamily();
+	hints.ai_family = glbl.GetDefPFFamily(runModConf->pConf);
 	hints.ai_socktype = SOCK_STREAM;
 
 	error = getaddrinfo((char*)pSrv->lstnIP, (char*) pSrv->port, &hints, &res);
@@ -762,7 +778,7 @@ getPeerNames(prop_t **peerName, prop_t **peerIP, struct sockaddr *pAddr, sbool b
 			ABORT_FINALIZE(RS_RET_INVALID_HNAME);
 		}
 
-		if (!glbl.GetDisableDNS()) {
+		if (!glbl.GetDisableDNS(runConf)) {
 			error = getnameinfo(pAddr, SALEN(pAddr), (char *) szHname, NI_MAXHOST, NULL, 0, NI_NAMEREQD);
 			if (error == 0) {
 				memset(&hints, 0, sizeof(struct addrinfo));
@@ -1062,7 +1078,7 @@ processDataRcvd_regexFraming(ptcpsess_t *const __restrict__ pThis,
  * rgerhards, 2008-03-14
  * EXTRACT from tcps_sess.c
  */
-static rsRetVal
+static rsRetVal ATTR_NONNULL(1, 2)
 processDataRcvd(ptcpsess_t *const __restrict__ pThis,
 	char **buff,
 	const int buffLen,
@@ -1072,14 +1088,10 @@ processDataRcvd(ptcpsess_t *const __restrict__ pThis,
 	unsigned *const __restrict__ pnMsgs)
 {
 	DEFiRet;
-	char c = **buff;
-	int octatesToCopy, octatesToDiscard;
-	uchar *propPeerName = NULL;
-	int lenPeerName = 0;
-	uchar *propPeerIP = NULL;
-	int lenPeerIP = 0;
+	const char c = **buff;
+	int octetsToCopy, octetsToDiscard;
 
-	if(pThis->pLstn->pSrv->inst->startRegex != NULL) {
+	if(pThis->startRegex != NULL) {
 		processDataRcvd_regexFraming(pThis, buff, stTime, ttGenTime, pMultiSub, pnMsgs);
 		FINALIZE;
 	}
@@ -1103,11 +1115,17 @@ processDataRcvd(ptcpsess_t *const __restrict__ pThis,
 	}
 
 	if(pThis->inputState == eInOctetCnt) {
+		uchar *propPeerName = NULL;
+		int lenPeerName = 0;
+		uchar *propPeerIP = NULL;
+		int lenPeerIP = 0;
 		if(isdigit(c)) {
 			if(pThis->iOctetsRemain <= 200000000) {
 				pThis->iOctetsRemain = pThis->iOctetsRemain * 10 + c - '0';
 			}
-			*(pThis->pMsg + pThis->iMsg++) = c;
+			if(pThis->iMsg < iMaxLine) {
+				*(pThis->pMsg + pThis->iMsg++) = c;
+			}
 		} else { /* done with the octet count, so this must be the SP terminator */
 			DBGPRINTF("TCP Message with octet-counter, size %d.\n", pThis->iOctetsRemain);
 			prop.GetString(pThis->peerName, &propPeerName, &lenPeerName);
@@ -1147,21 +1165,21 @@ processDataRcvd(ptcpsess_t *const __restrict__ pThis,
 		}
 	} else if(pThis->inputState == eInMsgTruncation) {
 		if ((c == '\n')
-		|| ((pThis->pLstn->pSrv->iAddtlFrameDelim != TCPSRV_NO_ADDTL_DELIMITER)
-		&& (c == pThis->pLstn->pSrv->iAddtlFrameDelim))) {
+		|| ((pThis->iAddtlFrameDelim != TCPSRV_NO_ADDTL_DELIMITER)
+		&& (c == pThis->iAddtlFrameDelim))) {
 			pThis->inputState = eAtStrtFram;
 		}
 	} else {
 		assert(pThis->inputState == eInMsg);
-
 		if (pThis->eFraming == TCP_FRAMING_OCTET_STUFFING) {
-			if(pThis->iMsg >= iMaxLine) {
+			int iMsg = pThis->iMsg; /* cache value for faster access */
+			if(iMsg >= iMaxLine) {
 				/* emergency, we now need to flush, no matter if we are at end of message or not... */
 				int i = 1;
 				char currBuffChar;
 				while(i < buffLen && ((currBuffChar = (*buff)[i]) != '\n'
-					&& (pThis->pLstn->pSrv->iAddtlFrameDelim == TCPSRV_NO_ADDTL_DELIMITER
-						|| currBuffChar != pThis->pLstn->pSrv->iAddtlFrameDelim))) {
+					&& (pThis->iAddtlFrameDelim == TCPSRV_NO_ADDTL_DELIMITER
+						|| currBuffChar != pThis->iAddtlFrameDelim))) {
 					i++;
 				}
 				LogError(0, NO_ERRCODE, "imptcp %s: message received is at least %d byte larger than "
@@ -1179,21 +1197,23 @@ processDataRcvd(ptcpsess_t *const __restrict__ pThis,
 				 */
 			}
 			if ((c == '\n')
-				   || ((pThis->pLstn->pSrv->iAddtlFrameDelim != TCPSRV_NO_ADDTL_DELIMITER)
-					   && (c == pThis->pLstn->pSrv->iAddtlFrameDelim))
+				   || ((pThis->iAddtlFrameDelim != TCPSRV_NO_ADDTL_DELIMITER)
+					   && (c == pThis->iAddtlFrameDelim))
 				   ) { /* record delimiter? */
 				if(pThis->pLstn->pSrv->multiLine) {
 					if((buffLen == 1) || ((*buff)[1] == '<')) {
 						doSubmitMsg(pThis, stTime, ttGenTime, pMultiSub);
+						iMsg = 0; /* Reset cached value! */
 						++(*pnMsgs);
 						pThis->inputState = eAtStrtFram;
 					} else {
-						if(pThis->iMsg < iMaxLine) {
-							*(pThis->pMsg + pThis->iMsg++) = c;
+						if(iMsg < iMaxLine) {
+							pThis->pMsg[iMsg++] = c;
 						}
 					}
 				} else {
 					doSubmitMsg(pThis, stTime, ttGenTime, pMultiSub);
+					iMsg = 0; /* Reset cached value! */
 					++(*pnMsgs);
 					pThis->inputState = eAtStrtFram;
 				}
@@ -1203,26 +1223,27 @@ processDataRcvd(ptcpsess_t *const __restrict__ pThis,
 				 * we truncate it. This is the best we can do in light of what the engine supports.
 				 * -- rgerhards, 2008-03-14
 				 */
-				if(pThis->iMsg < iMaxLine) {
-					*(pThis->pMsg + pThis->iMsg++) = c;
+				if(likely(iMsg < iMaxLine)) {
+					pThis->pMsg[iMsg++] = c;
 				}
 			}
+			pThis->iMsg = iMsg; /* update "real value" with cached one */
 		} else {
 			assert(pThis->eFraming == TCP_FRAMING_OCTET_COUNTING);
-			octatesToCopy = pThis->iOctetsRemain;
-			octatesToDiscard = 0;
-			if (buffLen < octatesToCopy) {
-				octatesToCopy = buffLen;
+			octetsToCopy = pThis->iOctetsRemain;
+			octetsToDiscard = 0;
+			if (buffLen < octetsToCopy) {
+				octetsToCopy = buffLen;
 			}
-			if (octatesToCopy + pThis->iMsg > iMaxLine) {
-				octatesToDiscard = octatesToCopy - (iMaxLine - pThis->iMsg);
-				octatesToCopy = iMaxLine - pThis->iMsg;
+			if (octetsToCopy + pThis->iMsg > iMaxLine) {
+				octetsToDiscard = octetsToCopy - (iMaxLine - pThis->iMsg);
+				octetsToCopy = iMaxLine - pThis->iMsg;
 			}
 
-			memcpy(pThis->pMsg + pThis->iMsg, *buff, octatesToCopy);
-			pThis->iMsg += octatesToCopy;
-			pThis->iOctetsRemain -= (octatesToCopy + octatesToDiscard);
-			*buff += (octatesToCopy + octatesToDiscard - 1);
+			memcpy(pThis->pMsg + pThis->iMsg, *buff, octetsToCopy);
+			pThis->iMsg += octetsToCopy;
+			pThis->iOctetsRemain -= (octetsToCopy + octetsToDiscard);
+			*buff += (octetsToCopy + octetsToDiscard - 1);
 			if (pThis->iOctetsRemain == 0) {
 				/* we have end of frame! */
 				doSubmitMsg(pThis, stTime, ttGenTime, pMultiSub);
@@ -1254,8 +1275,8 @@ finalize_it:
  * we have just received a bunch of data! -- rgerhards, 2009-06-16
  * EXTRACT from tcps_sess.c
  */
-static rsRetVal
-DataRcvdUncompressed(ptcpsess_t *pThis, char *pData, size_t iLen, struct syslogTime *stTime, time_t ttGenTime)
+static rsRetVal ATTR_NONNULL(1, 2)
+DataRcvdUncompressed(ptcpsess_t *pThis, char *pData, const size_t iLen, struct syslogTime *stTime, time_t ttGenTime)
 {
 	multi_submit_t multiSub;
 	smsg_t *pMsgs[CONF_NUM_MULTISUB];
@@ -1263,7 +1284,6 @@ DataRcvdUncompressed(ptcpsess_t *pThis, char *pData, size_t iLen, struct syslogT
 	unsigned nMsgs = 0;
 	DEFiRet;
 
-	assert(pData != NULL);
 	assert(iLen > 0);
 
 	if(ttGenTime == 0)
@@ -1282,7 +1302,7 @@ DataRcvdUncompressed(ptcpsess_t *pThis, char *pData, size_t iLen, struct syslogT
 
 	iRet = multiSubmitFlush(&multiSub);
 
-	if(glblSenderKeepTrack)
+	if(runConf->globals.senderKeepTrack)
 		statsRecordSender(propGetSzStr(pThis->peerName), nMsgs, ttGenTime);
 
 finalize_it:
@@ -1389,7 +1409,7 @@ addEPollSock(epolld_type_t typ, void *ptr, int sock, epolld_t **pEpd)
 	epd->ptr = ptr;
 	epd->sock = sock;
 	*pEpd = epd;
-	epd->ev.events = EPOLLIN|EPOLLET|EPOLLONESHOT;
+	epd->ev.events = EPOLLIN|EPOLLONESHOT;
 	epd->ev.data.ptr = (void*) epd;
 
 	if(epoll_ctl(epollfd, EPOLL_CTL_ADD, sock, &(epd->ev)) != 0) {
@@ -1517,6 +1537,8 @@ addSess(ptcplstn_t *pLstn, int sock, prop_t *peerName, prop_t *peerIP)
 	pSess->peerName = peerName;
 	pSess->peerIP = peerIP;
 	pSess->compressionMode = pLstn->pSrv->compressionMode;
+	pSess->startRegex = pLstn->pSrv->inst->startRegex;
+	pSess->iAddtlFrameDelim = pLstn->pSrv->iAddtlFrameDelim;
 
 	/* add to start of server's listener list */
 	pSess->prev = NULL;
@@ -1833,6 +1855,7 @@ startWorkerPool(void)
 	}
 	for(i = 0 ; i < runModConf->wrkrMax ; ++i) {
 		/* init worker info structure! */
+		wrkrInfo[i].wrkrIdx = i;
 		wrkrInfo[i].numCalled = 0;
 		pthread_create(&wrkrInfo[i].tid, &wrkrThrdAttr, wrkr, &(wrkrInfo[i]));
 	}
@@ -1845,7 +1868,7 @@ static void
 stopWorkerPool(void)
 {
 	int i;
-	DBGPRINTF("imptcp: stoping worker pool\n");
+	DBGPRINTF("imptcp: stopping worker pool\n");
 	pthread_mutex_lock(&io_q.mut);
 	pthread_cond_broadcast(&io_q.wakeup_worker); /* awake wrkr if not running */
 	pthread_mutex_unlock(&io_q.mut);
@@ -1937,11 +1960,12 @@ sessActivity(ptcpsess_t *const pSess, int *const continue_polling)
 	int remsock = 0; /* init just to keep compiler happy... :-( */
 	sbool bEmitOnClose = 0;
 	char rcvBuf[128*1024];
+	int runs = 0;
 	DEFiRet;
 
 	DBGPRINTF("imptcp: new activity on session socket %d\n", pSess->sock);
 
-	while(1) {
+	while(runs++ < 16) {
 		lenBuf = sizeof(rcvBuf);
 		lenRcv = recv(pSess->sock, rcvBuf, lenBuf, 0);
 
@@ -2120,6 +2144,15 @@ wrkr(void *myself)
 	pthread_mutex_lock(&io_q.mut);
 	++wrkrRunning;
 	pthread_mutex_unlock(&io_q.mut);
+
+	uchar thrdName[32];
+	snprintf((char*)thrdName, sizeof(thrdName), "imptcp/w%d", me->wrkrIdx);
+#	if defined(HAVE_PRCTL) && defined(PR_SET_NAME)
+	/* set thread name - we ignore if the call fails, has no harsh consequences... */
+	if(prctl(PR_SET_NAME, thrdName, 0, 0, 0) != 0) {
+		DBGPRINTF("prctl failed, not setting thread name for '%s'\n", thrdName);
+	}
+#	endif
 
 	io_req_t *n;
 	while(1) {
@@ -2386,7 +2419,7 @@ ENDcheckCnf
 BEGINactivateCnfPrePrivDrop
 	instanceConf_t *inst;
 CODESTARTactivateCnfPrePrivDrop
-	iMaxLine = glbl.GetMaxLine(); /* get maximum size we currently support */
+	iMaxLine = glbl.GetMaxLine(runConf); /* get maximum size we currently support */
 	DBGPRINTF("imptcp: config params iMaxLine %d\n", iMaxLine);
 
 	runModConf = pModConf;

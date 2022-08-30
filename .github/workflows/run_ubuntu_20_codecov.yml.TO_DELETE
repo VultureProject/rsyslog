@@ -1,4 +1,4 @@
-# Copyright 2020 Rainer Gerhards and Others
+# Copyright 2022 Rainer Gerhards and Others
 #
 # https://github.com/rsyslog/rsyslog-pkg-ubuntu
 #
@@ -22,10 +22,13 @@
 
 
 ---
-name: check ubuntu 20 distcheck
+name: ubuntu 20 codecov
 
 on:
   pull_request:
+  push:
+      branches:
+        - master
 
 jobs:
   check_run:
@@ -41,34 +44,23 @@ jobs:
           chmod -R go+rw .
           export RSYSLOG_CONTAINER_UID="" # use default
           export RSYSLOG_STATSURL='http://build.rsyslog.com/testbench-failedtest.php'
-          export CFLAGS='-g'
+          export CFLAGS='-g -O0 -coverage'
+          export LDFLAGS='-lgcov'
           export CC='gcc'
           export USE_AUTO_DEBUG='off'
           export CI_MAKE_OPT='-j20'
           export CI_MAKE_CHECK_OPT='-j8'
-          export CI_CHECK_CMD='distcheck'
+          export CI_CHECK_CMD='check'
+          export CI_CODECOV_TOKEN='9958eda4-50ae-4f2c-b6b6-567d3e6a2e81'
           export RSYSLOG_DEV_CONTAINER='rsyslog/rsyslog_dev_base_ubuntu:20.04'
-          export ABORT_ALL_ON_TEST_FAIL='YES'
-          export RSYSLOG_CONFIGURE_OPTIONS_EXTRA="--disable-omkafka --disable-imkafka --disable-kafka-tests"
+          export ABORT_ALL_ON_TEST_FAIL='NO'
+          export RSYSLOG_CONFIGURE_OPTIONS_EXTRA="--disable-kafka-tests --disable-imkafka \
+                        --disable-omkafka --enable-debug --disable-elasticsearch \
+                        --disable-elasticsearch-tests"
           devtools/devcontainer.sh --rm devtools/run-ci.sh
 
       - name: show error logs (if we errored)
         if:  ${{ failure() || cancelled() }}
         run: |
-          echo Some CI debugging in case we see permission errors again - remove when finally solved
-          echo PWD: $(pwd)
-          ls -la
-          ls -ld rsyslog-*
-          sudo chmod -R go+rw .
-          ls -la
-          ls -ld rsyslog-*
-          echo FIND ..:
-          find .. -name .dep_wrk
-          echo FIND:
-          find . -name .dep_wrk
-          echo ls of curr dir:
-          echo END CI DEBUGGING
-          rm -rf $(find . -name .dep_wrk)
-          sudo chmod -R a+r .
           devtools/gather-check-logs.sh
           cat failed-tests.log

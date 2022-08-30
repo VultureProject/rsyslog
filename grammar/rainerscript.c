@@ -2,7 +2,7 @@
  *
  * Module begun 2011-07-01 by Rainer Gerhards
  *
- * Copyright 2011-2019 Rainer Gerhards and Others.
+ * Copyright 2011-2022 Rainer Gerhards and Others.
  *
  * This file is part of the rsyslog runtime library.
  *
@@ -732,7 +732,7 @@ nvlstChkDupes(struct nvlst *lst)
 		if(nvlstFindName(lst->next, lst->name) != NULL) {
 			cstr = es_str2cstr(lst->name, NULL);
 			parser_errmsg("duplicate parameter '%s' -- "
-			  "interpretation is ambigious, one value "
+			  "interpretation is ambiguous, one value "
 			  "will be randomly selected. Fix this problem.",
 			  cstr);
 			free(cstr);
@@ -2865,7 +2865,7 @@ doFunct_num2ipv4(struct cnffunc *__restrict__ const func,
 		numip[0], numip[1], numip[2], numip[3]);
 	len = snprintf(str, 16, "%d.%d.%d.%d", numip[3], numip[2], numip[1], numip[0]);
 done:
-	DBGPRINTF("rainerscript: (num2ipv4) ipv4-Address: %s, lengh: %zu\n", str, len);
+	DBGPRINTF("rainerscript: (num2ipv4) ipv4-Address: %s, length: %zu\n", str, len);
 	ret->d.estr = es_newStrFromCStr(str, len);
 	ret->datatype = 'S';
 }
@@ -3046,6 +3046,39 @@ evalStrArrayCmp(es_str_t *const estr_l,
 		if(bMustFree2) es_deleteStr(estr_l);  \
 		varFreeMembers(&l)
 
+/* helper to evaluate comparison in a strcmp() like manner. Result is
+ * to be used for final truth value evaluation.
+ */
+static int eval_strcmp_like(const struct cnfexpr *__restrict__ const expr,
+	void *__restrict__ const usrptr,
+	wti_t *__restrict__ const pWti)
+{
+	es_str_t *__restrict__ estr_r, *__restrict__ estr_l;
+	int bMustFree, bMustFree2;
+	int64_t n_r, n_l;
+	int convok_r, convok_l;
+	struct svar r, l; /* memory for subexpression results */
+	int ret;
+
+	cnfexprEval(expr->l, &l, usrptr, pWti);
+	cnfexprEval(expr->r, &r, usrptr, pWti);
+	n_l = var2Number(&l, &convok_l);
+	if(convok_l) {
+		n_r = var2Number(&r, &convok_r);
+	}
+	if(convok_l && convok_r) {
+		ret = n_l - n_r;
+	} else {
+		estr_l = var2String(&l, &bMustFree);
+		estr_r = var2String(&r, &bMustFree2);
+		ret = es_strcmp(estr_l, estr_r);
+		if(bMustFree) es_deleteStr(estr_l);
+		if(bMustFree2) es_deleteStr(estr_r);
+	}
+	FREE_BOTH_RET;
+	return ret;
+}
+
 /* evaluate an expression.
  * Note that we try to avoid malloc whenever possible (because of
  * the large overhead it has, especially on highly threaded programs).
@@ -3196,196 +3229,20 @@ cnfexprEval(const struct cnfexpr *__restrict__ const expr,
 		FREE_BOTH_RET;
 		break;
 	case CMP_LE:
-		cnfexprEval(expr->l, &l, usrptr, pWti);
-		cnfexprEval(expr->r, &r, usrptr, pWti);
 		ret->datatype = 'N';
-		if(l.datatype == 'S') {
-			if(r.datatype == 'S') {
-				ret->d.n = es_strcmp(l.d.estr, r.d.estr) <= 0; /*CMP*/
-			} else {
-				n_l = var2Number(&l, &convok_l);
-				if(convok_l) {
-					ret->d.n = (n_l <= r.d.n); /*CMP*/
-				} else {
-					estr_r = var2String(&r, &bMustFree);
-					ret->d.n = es_strcmp(l.d.estr, estr_r) <= 0; /*CMP*/
-					if(bMustFree) es_deleteStr(estr_r);
-				}
-			}
-		} else if(l.datatype == 'J') {
-			estr_l = var2String(&l, &bMustFree);
-			if(r.datatype == 'S') {
-				ret->d.n = es_strcmp(estr_l, r.d.estr) <= 0; /*CMP*/
-			} else {
-				n_l = var2Number(&l, &convok_l);
-				if(convok_l) {
-					ret->d.n = (n_l <= r.d.n); /*CMP*/
-				} else {
-					estr_r = var2String(&r, &bMustFree2);
-					ret->d.n = es_strcmp(estr_l, estr_r) <= 0; /*CMP*/
-					if(bMustFree2) es_deleteStr(estr_r);
-				}
-			}
-			if(bMustFree) es_deleteStr(estr_l);
-		} else {
-			if(r.datatype == 'S') {
-				n_r = var2Number(&r, &convok_r);
-				if(convok_r) {
-					ret->d.n = (l.d.n <= n_r); /*CMP*/
-				} else {
-					estr_l = var2String(&l, &bMustFree);
-					ret->d.n = es_strcmp(r.d.estr, estr_l) <= 0; /*CMP*/
-					if(bMustFree) es_deleteStr(estr_l);
-				}
-			} else {
-				ret->d.n = (l.d.n <= r.d.n); /*CMP*/
-			}
-		}
-		FREE_BOTH_RET;
+		ret->d.n = eval_strcmp_like(expr, usrptr, pWti) <= 0;
 		break;
 	case CMP_GE:
-		cnfexprEval(expr->l, &l, usrptr, pWti);
-		cnfexprEval(expr->r, &r, usrptr, pWti);
 		ret->datatype = 'N';
-		if(l.datatype == 'S') {
-			if(r.datatype == 'S') {
-				ret->d.n = es_strcmp(l.d.estr, r.d.estr) >= 0; /*CMP*/
-			} else {
-				n_l = var2Number(&l, &convok_l);
-				if(convok_l) {
-					ret->d.n = (n_l >= r.d.n); /*CMP*/
-				} else {
-					estr_r = var2String(&r, &bMustFree);
-					ret->d.n = es_strcmp(l.d.estr, estr_r) >= 0; /*CMP*/
-					if(bMustFree) es_deleteStr(estr_r);
-				}
-			}
-		} else if(l.datatype == 'J') {
-			estr_l = var2String(&l, &bMustFree);
-			if(r.datatype == 'S') {
-				ret->d.n = es_strcmp(estr_l, r.d.estr) >= 0; /*CMP*/
-			} else {
-				n_l = var2Number(&l, &convok_l);
-				if(convok_l) {
-					ret->d.n = (n_l >= r.d.n); /*CMP*/
-				} else {
-					estr_r = var2String(&r, &bMustFree2);
-					ret->d.n = es_strcmp(estr_l, estr_r) >= 0; /*CMP*/
-					if(bMustFree2) es_deleteStr(estr_r);
-				}
-			}
-			if(bMustFree) es_deleteStr(estr_l);
-		} else {
-			if(r.datatype == 'S') {
-				n_r = var2Number(&r, &convok_r);
-				if(convok_r) {
-					ret->d.n = (l.d.n >= n_r); /*CMP*/
-				} else {
-					estr_l = var2String(&l, &bMustFree);
-					ret->d.n = es_strcmp(r.d.estr, estr_l) >= 0; /*CMP*/
-					if(bMustFree) es_deleteStr(estr_l);
-				}
-			} else {
-				ret->d.n = (l.d.n >= r.d.n); /*CMP*/
-			}
-		}
-		FREE_BOTH_RET;
+		ret->d.n = eval_strcmp_like(expr, usrptr, pWti) >= 0;
 		break;
 	case CMP_LT:
-		cnfexprEval(expr->l, &l, usrptr, pWti);
-		cnfexprEval(expr->r, &r, usrptr, pWti);
 		ret->datatype = 'N';
-		if(l.datatype == 'S') {
-			if(r.datatype == 'S') {
-				ret->d.n = es_strcmp(l.d.estr, r.d.estr) < 0; /*CMP*/
-			} else {
-				n_l = var2Number(&l, &convok_l);
-				if(convok_l) {
-					ret->d.n = (n_l < r.d.n); /*CMP*/
-				} else {
-					estr_r = var2String(&r, &bMustFree);
-					ret->d.n = es_strcmp(l.d.estr, estr_r) < 0; /*CMP*/
-					if(bMustFree) es_deleteStr(estr_r);
-				}
-			}
-		} else if(l.datatype == 'J') {
-			estr_l = var2String(&l, &bMustFree);
-			if(r.datatype == 'S') {
-				ret->d.n = es_strcmp(estr_l, r.d.estr) < 0; /*CMP*/
-			} else {
-				n_l = var2Number(&l, &convok_l);
-				if(convok_l) {
-					ret->d.n = (n_l < r.d.n); /*CMP*/
-				} else {
-					estr_r = var2String(&r, &bMustFree2);
-					ret->d.n = es_strcmp(estr_l, estr_r) < 0; /*CMP*/
-					if(bMustFree2) es_deleteStr(estr_r);
-				}
-			}
-			if(bMustFree) es_deleteStr(estr_l);
-		} else {
-			if(r.datatype == 'S') {
-				n_r = var2Number(&r, &convok_r);
-				if(convok_r) {
-					ret->d.n = (l.d.n < n_r); /*CMP*/
-				} else {
-					estr_l = var2String(&l, &bMustFree);
-					ret->d.n = es_strcmp(r.d.estr, estr_l) < 0; /*CMP*/
-					if(bMustFree) es_deleteStr(estr_l);
-				}
-			} else {
-				ret->d.n = (l.d.n < r.d.n); /*CMP*/
-			}
-		}
-		FREE_BOTH_RET;
+		ret->d.n = eval_strcmp_like(expr, usrptr, pWti) < 0;
 		break;
 	case CMP_GT:
-		cnfexprEval(expr->l, &l, usrptr, pWti);
-		cnfexprEval(expr->r, &r, usrptr, pWti);
 		ret->datatype = 'N';
-		if(l.datatype == 'S') {
-			if(r.datatype == 'S') {
-				ret->d.n = es_strcmp(l.d.estr, r.d.estr) > 0; /*CMP*/
-			} else {
-				n_l = var2Number(&l, &convok_l);
-				if(convok_l) {
-					ret->d.n = (n_l > r.d.n); /*CMP*/
-				} else {
-					estr_r = var2String(&r, &bMustFree);
-					ret->d.n = es_strcmp(l.d.estr, estr_r) > 0; /*CMP*/
-					if(bMustFree) es_deleteStr(estr_r);
-				}
-			}
-		} else if(l.datatype == 'J') {
-			estr_l = var2String(&l, &bMustFree);
-			if(r.datatype == 'S') {
-				ret->d.n = es_strcmp(estr_l, r.d.estr) > 0; /*CMP*/
-			} else {
-				n_l = var2Number(&l, &convok_l);
-				if(convok_l) {
-					ret->d.n = (n_l > r.d.n); /*CMP*/
-				} else {
-					estr_r = var2String(&r, &bMustFree2);
-					ret->d.n = es_strcmp(estr_l, estr_r) > 0; /*CMP*/
-					if(bMustFree2) es_deleteStr(estr_r);
-				}
-			}
-			if(bMustFree) es_deleteStr(estr_l);
-		} else {
-			if(r.datatype == 'S') {
-				n_r = var2Number(&r, &convok_r);
-				if(convok_r) {
-					ret->d.n = (l.d.n > n_r); /*CMP*/
-				} else {
-					estr_l = var2String(&l, &bMustFree);
-					ret->d.n = es_strcmp(r.d.estr, estr_l) > 0; /*CMP*/
-					if(bMustFree) es_deleteStr(estr_l);
-				}
-			} else {
-				ret->d.n = (l.d.n > r.d.n); /*CMP*/
-			}
-		}
-		FREE_BOTH_RET;
+		ret->d.n = eval_strcmp_like(expr, usrptr, pWti) > 0;
 		break;
 	case CMP_STARTSWITH:
 		PREP_TWO_STRINGS;
@@ -3738,7 +3595,7 @@ initFunc_exec_template(struct cnffunc *func)
 	}
 
 	tplName = es_str2cstr(((struct cnfstringval*) func->expr[0])->estr, NULL);
-	func->funcdata = tplFind(ourConf, tplName, strlen(tplName));
+	func->funcdata = tplFind(loadConf, tplName, strlen(tplName));
 	if(func->funcdata == NULL) {
 		parser_errmsg("exec_template(): template '%s' could not be found", tplName);
 		FINALIZE;
@@ -4709,10 +4566,10 @@ cnfstmtNewAct(struct nvlst *lst)
 	}
 	localRet = actionNewInst(lst, &cnfstmt->d.act);
 	if(localRet == RS_RET_OK_WARN) {
-		parser_errmsg("warnings occured in file '%s' around line %d",
+		parser_errmsg("warnings occurred in file '%s' around line %d",
 			      cnfcurrfn, yylineno);
 	} else if(localRet != RS_RET_OK) {
-		parser_errmsg("errors occured in file '%s' around line %d",
+		parser_errmsg("errors occurred in file '%s' around line %d",
 			      cnfcurrfn, yylineno);
 		cnfstmt->nodetype = S_NOP; /* disable action! */
 		goto done;
@@ -4736,7 +4593,7 @@ cnfstmtNewLegaAct(char *actline)
 	cnfstmt->printable = (uchar*)strdup((char*)actline);
 	localRet = cflineDoAction(loadConf, (uchar**)&actline, &cnfstmt->d.act);
 	if(localRet != RS_RET_OK) {
-		parser_errmsg("%s occured in file '%s' around line %d",
+		parser_errmsg("%s occurred in file '%s' around line %d",
 			      (localRet == RS_RET_OK_WARN) ? "warnings" : "errors",
 			      cnfcurrfn, yylineno);
 		if(localRet != RS_RET_OK_WARN) {
@@ -5618,7 +5475,7 @@ includeProcessCnf(struct nvlst *const lst)
 			} else if(!strcmp(md, "optional")) {
 				optional = 1;
 			} else {
-				parser_errmsg("invalid 'mode' paramter: '%s' - ignored", md);
+				parser_errmsg("invalid 'mode' parameter: '%s' - ignored", md);
 			}
 			free((void*)md);
 		} else {

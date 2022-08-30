@@ -149,8 +149,8 @@ typedef struct configSettings_s {
 	int bActExecWhenPrevSusp;			/* execute action only when previous one was suspended? */
 	int bActionWriteAllMarkMsgs;			/* should all mark messages be unconditionally written? */
 	int iActExecOnceInterval;			/* execute action once every nn seconds */
-	int iActExecEveryNthOccur;			/* execute action every n-th occurence (0,1=always) */
-	time_t iActExecEveryNthOccurTO;			/* timeout for n-occurence setting (in seconds, 0=never) */
+	int iActExecEveryNthOccur;			/* execute action every n-th occurrence (0,1=always) */
+	time_t iActExecEveryNthOccurTO;			/* timeout for n-occurrence setting (in seconds, 0=never) */
 	int glbliActionResumeInterval;
 	int glbliActionResumeRetryCount;		/* how often should suspended actions be retried? */
 	int bActionRepMsgHasMsg;			/* last messsage repeated... has msg fragment in it */
@@ -184,20 +184,12 @@ typedef struct configSettings_s {
 
 static configSettings_t cs;					/* our current config settings */
 
-/* the counter below counts actions created. It is used to obtain unique IDs for the action. They
- * should not be relied on for any long-term activity (e.g. disk queue names!), but they are nice
- * to have during one instance of an rsyslogd run. For example, I use them to name actions when there
- * is no better name available.
- */
-int iActionNbr = 0;
-int bActionReportSuspension = 1;
-int bActionReportSuspensionCont = 0;
-
 /* tables for interfacing with the v6 config system */
 static struct cnfparamdescr cnfparamdescr[] = {
 	{ "name", eCmdHdlrGetWord, 0 }, /* legacy: actionname */
 	{ "type", eCmdHdlrString, CNFPARAM_REQUIRED }, /* legacy: actionname */
 	{ "action.errorfile", eCmdHdlrString, 0 },
+	{ "action.errorfile.maxsize", eCmdHdlrInt, 0 },
 	{ "action.writeallmarkmessages", eCmdHdlrBinary, 0 }, /* legacy: actionwriteallmarkmessages */
 	{ "action.execonlyeverynthtime", eCmdHdlrInt, 0 }, /* legacy: actionexeconlyeverynthtime */
 	{ "action.execonlyeverynthtimetimeout", eCmdHdlrInt, 0 }, /* legacy: actionexeconlyeverynthtimetimeout */
@@ -324,6 +316,20 @@ actionResetQueueParams(void)
 	RETiRet;
 }
 
+/* free action worker data table
+*/
+static void freeWrkrDataTable(action_t * const pThis)
+{
+	int freeSpot;
+	for(freeSpot = 0; freeSpot < pThis->wrkrDataTableSize; ++freeSpot) {
+		if(pThis->wrkrDataTable[freeSpot] != NULL) {
+			pThis->pMod->mod.om.freeWrkrInstance(pThis->wrkrDataTable[freeSpot]);
+			pThis->wrkrDataTable[freeSpot] = NULL;
+		}
+	}
+	free(pThis->wrkrDataTable);
+	return;
+}
 
 /* destructs an action descriptor object
  * rgerhards, 2007-08-01
@@ -361,7 +367,7 @@ rsRetVal actionDestruct(action_t * const pThis)
 	free(pThis->pszName);
 	free(pThis->ppTpl);
 	free(pThis->peParamPassing);
-	free(pThis->wrkrDataTable);
+	freeWrkrDataTable(pThis);
 
 finalize_it:
 	free(pThis);
@@ -393,13 +399,15 @@ rsRetVal actionConstruct(action_t **ppThis)
 	action_t *pThis;
 
 	assert(ppThis != NULL);
-	
+
 	CHKmalloc(pThis = (action_t*) calloc(1, sizeof(action_t)));
 	pThis->iResumeInterval = 30;
 	pThis->iResumeIntervalMax = 1800; /* max interval default is half an hour */
 	pThis->iResumeRetryCount = 0;
 	pThis->pszName = NULL;
 	pThis->pszErrFile = NULL;
+	pThis->maxErrFileSize = 0;
+	pThis->currentErrFileSize = 0;
 	pThis->pszExternalStateFile = NULL;
 	pThis->fdErrFile = -1;
 	pThis->bWriteAllMarkMsgs = 1;
@@ -414,14 +422,14 @@ rsRetVal actionConstruct(action_t **ppThis)
 	pThis->bReportSuspensionCont = -1; /* indicate "not yet set" */
 	pThis->bCopyMsg = 0;
 	pThis->tLastOccur = datetime.GetTime(NULL);	/* done once per action on startup only */
-	pThis->iActionNbr = iActionNbr;
+	pThis->iActionNbr = loadConf->actions.iActionNbr;
 	pthread_mutex_init(&pThis->mutErrFile, NULL);
 	pthread_mutex_init(&pThis->mutAction, NULL);
 	pthread_mutex_init(&pThis->mutWrkrDataTable, NULL);
 	INIT_ATOMIC_HELPER_MUT(pThis->mutCAS);
 
 	/* indicate we have a new action */
-	++iActionNbr;
+	loadConf->actions.iActionNbr++;
 
 finalize_it:
 	*ppThis = pThis;
@@ -569,6 +577,7 @@ actionConstructFinalize(action_t *__restrict__ const pThis, struct nvlst *lst)
 		qqueueSetDefaultsActionQueue(pThis->pQueue);
 		qqueueApplyCnfParam(pThis->pQueue, lst);
 	}
+	qqueueCorrectParams(pThis->pQueue);
 
 #	undef setQPROP
 #	undef setQPROPstr
@@ -584,7 +593,7 @@ actionConstructFinalize(action_t *__restrict__ const pThis, struct nvlst *lst)
 			"that they will have no effect - "
 			"see https://www.rsyslog.com/mm-no-queue/", (char*)modGetName(pThis->pMod));
 	}
-	
+
 	/* and now reset the queue params (see comment in its function header!) */
 	actionResetQueueParams();
 
@@ -752,9 +761,9 @@ static void
 setSuspendMessageConfVars(action_t *__restrict__ const pThis)
 {
 	if(pThis->bReportSuspension == -1)
-		pThis->bReportSuspension = bActionReportSuspension;
+		pThis->bReportSuspension = runConf->globals.bActionReportSuspension;
 	if(pThis->bReportSuspensionCont == -1) {
-		pThis->bReportSuspensionCont = bActionReportSuspensionCont;
+		pThis->bReportSuspensionCont = runConf->globals.bActionReportSuspensionCont;
 		if(pThis->bReportSuspensionCont == -1)
 			pThis->bReportSuspensionCont = 1;
 	}
@@ -768,11 +777,13 @@ static void ATTR_NONNULL() actionRetry(action_t * const pThis, wti_t * const pWt
 {
 	setSuspendMessageConfVars(pThis);
 	actionSetState(pThis, pWti, ACT_STATE_RTRY);
-	LogMsg(0, RS_RET_SUSPENDED, LOG_WARNING,
-	      "action '%s' suspended (module '%s'), retry %d. There should "
-	      "be messages before this one giving the reason for suspension.",
-	      pThis->pszName, pThis->pMod->pszName,
-	      getActionNbrResRtry(pWti, pThis));
+	if(pThis->bReportSuspension) {
+		LogMsg(0, RS_RET_SUSPENDED, LOG_WARNING,
+		      "action '%s' suspended (module '%s'), retry %d. There should "
+		      "be messages before this one giving the reason for suspension.",
+		      pThis->pszName, pThis->pMod->pszName,
+		      getActionNbrResRtry(pWti, pThis));
+	}
 	incActionResumeInRow(pWti, pThis);
 }
 
@@ -1436,6 +1447,14 @@ actionWriteErrorFile(action_t *__restrict__ const pThis, const rsRetVal ret,
 				pThis->pszName, pThis->pszErrFile);
 			goto done;
 		}
+		if (pThis->maxErrFileSize > 0) {
+			struct stat statbuf;
+			if (fstat(pThis->fdErrFile, &statbuf) == -1) {
+				LogError(errno, RS_RET_ERR, "failed to fstat %s", pThis->pszErrFile);
+				goto done;
+			}
+			pThis->currentErrFileSize = statbuf.st_size;
+		}
 	}
 
 	for(int i = 0 ; i < nparams ; ++i) {
@@ -1454,16 +1473,27 @@ actionWriteErrorFile(action_t *__restrict__ const pThis, const rsRetVal ret,
 		char *const rendered = strdup((char*)fjson_object_to_json_string(etry));
 		if(rendered == NULL)
 			goto done;
-		const size_t toWrite = strlen(rendered) + 1;
-		/* note: we use the '\0' inside the string to store a LF - we do not
-		 * otherwise need it and it safes us a copy/realloc.
-		 */
-		rendered[toWrite-1] = '\n'; /* NO LONGER A STRING! */
-		const ssize_t wrRet = write(pThis->fdErrFile, rendered, toWrite);
-		if(wrRet != (ssize_t) toWrite) {
-			LogError(errno, RS_RET_IO_ERROR,
-				"action %s: error writing errorFile %s, write returned %lld",
-				pThis->pszName, pThis->pszErrFile, (long long) wrRet);
+
+		size_t toWrite = strlen(rendered) + 1;
+		// Check if need to truncate the amount of bytes to write
+		if (pThis->maxErrFileSize > 0) {
+			if (pThis->currentErrFileSize + toWrite > pThis->maxErrFileSize) {
+				// Truncate to the pending available
+				toWrite = pThis->maxErrFileSize - pThis->currentErrFileSize;
+			}
+			pThis->currentErrFileSize += toWrite;
+		}
+		if(toWrite > 0) {
+			/* note: we use the '\0' inside the string to store a LF - we do not
+			 * otherwise need it and it safes us a copy/realloc.
+			 */
+			rendered[toWrite-1] = '\n'; /* NO LONGER A STRING! */
+			const ssize_t wrRet = write(pThis->fdErrFile, rendered, toWrite);
+			if(wrRet != (ssize_t) toWrite) {
+				LogError(errno, RS_RET_IO_ERROR,
+					"action %s: error writing errorFile %s, write returned %lld",
+					pThis->pszName, pThis->pszErrFile, (long long) wrRet);
+			}
 		}
 		free(rendered);
 
@@ -1574,7 +1604,7 @@ DBGPRINTF("actionCommit[%s]: return actionTryCommit %d\n", pThis->pszName, iRet)
 	/* We still have some messages with suspend error. So now let's do our
 	 * "regular" retry and suspend processing.
 	 */
-	DBGPRINTF("actionCommit[%s]: unhappy, we still have %d uncommited messages.\n",
+	DBGPRINTF("actionCommit[%s]: unhappy, we still have %d uncommitted messages.\n",
 		pThis->pszName, nMsgs);
 	int bDone = 0;
 	do {
@@ -1620,7 +1650,7 @@ actionCommitAllDirect(wti_t *__restrict__ const pWti)
 	int i;
 	action_t *pAction;
 
-	for(i = 0 ; i < iActionNbr ; ++i) {
+	for(i = 0 ; i < runConf->actions.iActionNbr ; ++i) {
 		pAction = pWti->actWrkrInfo[i].pAction;
 		if(pAction == NULL)
 			continue;
@@ -1863,10 +1893,10 @@ actionWriteToAction(action_t * const pAction, smsg_t *pMsg, wti_t * const pWti)
 	 * of view. -- rgerhards, 2008-08-07.
 	 */
 	if(pAction->iExecEveryNthOccur > 1) {
-		/* we need to care about multiple occurences */
+		/* we need to care about multiple occurrences */
 		if(   pAction->iExecEveryNthOccurTO > 0
 		   && (getActNow(pAction) - pAction->tLastOccur) > pAction->iExecEveryNthOccurTO) {
-		  	DBGPRINTF("n-th occurence handling timed out (%d sec), restarting from 0\n",
+		  	DBGPRINTF("n-th occurrence handling timed out (%d sec), restarting from 0\n",
 				  (int) (getActNow(pAction) - pAction->tLastOccur));
 			pAction->iNbrNoExec = 0;
 			pAction->tLastOccur = getActNow(pAction);
@@ -1956,7 +1986,7 @@ DEFFUNC_llExecFunc(doActivateActions)
 {
 	rsRetVal localRet;
 	action_t * const pThis = (action_t*) pData;
-	localRet = qqueueStart(pThis->pQueue);
+	localRet = qqueueStart(runConf, pThis->pQueue);
 	if(localRet != RS_RET_OK) {
 		LogError(0, localRet, "error starting up action queue");
 		if(localRet == RS_RET_FILE_PREFIX_MISSING) {
@@ -1979,7 +2009,7 @@ rsRetVal
 activateActions(void)
 {
 	DEFiRet;
-	iRet = ruleset.IterateAllActions(ourConf, doActivateActions, NULL);
+	iRet = ruleset.IterateAllActions(runConf, doActivateActions, NULL);
 	RETiRet;
 }
 
@@ -2038,7 +2068,7 @@ static rsRetVal
 actionApplyCnfParam(action_t * const pAction, struct cnfparamvals * const pvals)
 {
 	int i;
-	
+
 	for(i = 0 ; i < pblk.nParams ; ++i) {
 		if(!pvals[i].bUsed)
 			continue;
@@ -2048,6 +2078,8 @@ actionApplyCnfParam(action_t * const pAction, struct cnfparamvals * const pvals)
 			continue; /* this is handled seperately during module select! */
 		} else if(!strcmp(pblk.descr[i].name, "action.errorfile")) {
 			pAction->pszErrFile = es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if(!strcmp(pblk.descr[i].name, "action.errorfile.maxsize")) {
+			pAction->maxErrFileSize = pvals[i].val.d.n;
 		} else if(!strcmp(pblk.descr[i].name, "action.externalstate.file")) {
 			pAction->pszExternalStateFile = es_str2cstr(pvals[i].val.d.estr, NULL);
 		} else if(!strcmp(pblk.descr[i].name, "action.writeallmarkmessages")) {
@@ -2139,7 +2171,7 @@ addAction(action_t **ppAction, modInfo_t *pMod, void *pModData,
 		CHKmalloc(pAction->peParamPassing = (paramPassing_t*)calloc(pAction->iNumTpls,
 			sizeof(paramPassing_t)));
 	}
-	
+
 	pAction->bUsesMsgPassingMode = 0;
 	pAction->bNeedReleaseBatch = 0;
 	for(i = 0 ; i < pAction->iNumTpls ; ++i) {
@@ -2149,7 +2181,7 @@ addAction(action_t **ppAction, modInfo_t *pMod, void *pModData,
 		 */
 		if(!(iTplOpts & OMSR_TPL_AS_MSG)) {
 		   	if((pAction->ppTpl[i] =
-				tplFind(ourConf, (char*)pTplName, strlen((char*)pTplName))) == NULL) {
+				tplFind(loadConf, (char*)pTplName, strlen((char*)pTplName))) == NULL) {
 				snprintf(errMsg, sizeof(errMsg),
 					 " Could not find template %d '%s' - action disabled",
 					 i, pTplName);
@@ -2188,7 +2220,7 @@ addAction(action_t **ppAction, modInfo_t *pMod, void *pModData,
 	pAction->pModData = pModData;
 
 	CHKiRet(actionConstructFinalize(pAction, lst));
-	
+
 	*ppAction = pAction; /* finally store the action pointer */
 
 finalize_it:

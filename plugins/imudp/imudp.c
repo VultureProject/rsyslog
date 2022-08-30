@@ -443,11 +443,11 @@ processPacket(struct lstn_s *lstn, struct sockaddr_storage *frominetPrev, int *p
 			 */
 			*pbIsPermitted = net.isAllowedSender2((uchar*)"UDP",
 					    (struct sockaddr *)frominet, "", 0);
-	
+
 			if(*pbIsPermitted == 0) {
 				DBGPRINTF("msg is not from an allowed sender\n");
 				STATSCOUNTER_INC(lstn->ctrDisallowed, lstn->mutCtrDisallowed);
-				if(glbl.GetOption_DisallowWarning) {
+				if(glbl.GetOptionDisallowWarning(runModConf->pConf)) {
 					LogError(0, NO_ERRCODE,
 						"imudp: UDP message from disallowed sender discarded");
 				}
@@ -909,7 +909,7 @@ rcvMainLoop(struct wrkrInfo_s *const __restrict__ pWrkr)
 
 		if(nfds < 0) {
 			if(errno == EINTR) {
-				DBGPRINTF("imudp: EINTR occured\n");
+				DBGPRINTF("imudp: EINTR occurred\n");
 			} else {
 				LogMsg(errno, RS_RET_POLL_ERR, LOG_WARNING, "imudp: poll "
 					"system call failed, may cause further troubles");
@@ -1187,7 +1187,7 @@ BEGINactivateCnf
 	int lenRcvBuf;
 CODESTARTactivateCnf
 	/* caching various settings */
-	iMaxLine = glbl.GetMaxLine();
+	iMaxLine = glbl.GetMaxLine(runConf);
 	lenRcvBuf = iMaxLine + 1;
 #	ifdef HAVE_RECVMMSG
 	lenRcvBuf *= runModConf->batchSize;

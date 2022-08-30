@@ -229,7 +229,7 @@ void
 lookupDestroyCnf(void)
 {
 	lookup_ref_t *luref, *luref_next;
-	for(luref = loadConf->lu_tabs.root ; luref != NULL ; ) {
+	for(luref = runConf->lu_tabs.root ; luref != NULL ; ) {
 		luref_next = luref->next;
 		lookupRefDestruct(luref);
 		luref = luref_next;
@@ -861,7 +861,7 @@ void
 lookupDoHUP(void)
 {
 	lookup_ref_t *luref;
-	for(luref = loadConf->lu_tabs.root ; luref != NULL ; luref = luref->next) {
+	for(luref = runConf->lu_tabs.root ; luref != NULL ; luref = luref->next) {
 		if (luref->reload_on_hup) {
 			lookupReload(luref, NULL);
 		}
@@ -873,7 +873,7 @@ lookupPendingReloadCount(void)
 {
 	uint pending_reload_count = 0;
 	lookup_ref_t *luref;
-	for(luref = loadConf->lu_tabs.root ; luref != NULL ; luref = luref->next) {
+	for(luref = runConf->lu_tabs.root ; luref != NULL ; luref = luref->next) {
 		if (lookupIsReloadPending(luref)) {
 			pending_reload_count++;
 		}
@@ -883,7 +883,7 @@ lookupPendingReloadCount(void)
 
 
 /* returns either a pointer to the value (read only!) or NULL
- * if either the key could not be found or an error occured.
+ * if either the key could not be found or an error occurred.
  * Note that an estr_t object is returned. The caller is
  * responsible for freeing it.
  */

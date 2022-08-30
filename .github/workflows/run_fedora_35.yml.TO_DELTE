@@ -22,13 +22,10 @@
 
 
 ---
-name: kafka codecov
+name: check fedora 35
 
 on:
   pull_request:
-  push:
-      branches:
-        - master
 
 jobs:
   check_run:
@@ -44,22 +41,15 @@ jobs:
           chmod -R go+rw .
           export RSYSLOG_CONTAINER_UID="" # use default
           export RSYSLOG_STATSURL='http://build.rsyslog.com/testbench-failedtest.php'
-          export CFLAGS='-g -O0 -coverage'
-          export LDFLAGS='-lgcov'
+          export CFLAGS='-g'
           export CC='gcc'
           export USE_AUTO_DEBUG='off'
           export CI_MAKE_OPT='-j20'
           export CI_MAKE_CHECK_OPT='-j8'
           export CI_CHECK_CMD='check'
-          export CI_CODECOV_TOKEN='9958eda4-50ae-4f2c-b6b6-567d3e6a2e81'
-          export RSYSLOG_DEV_CONTAINER='rsyslog/rsyslog_dev_base_fedora:30'
-          export ABORT_ALL_ON_TEST_FAIL='NO'
-          # Note: we completely override the container configure options here!
-          export RSYSLOG_CONFIGURE_OPTIONS_OVERRIDE="--enable-testbench --enable-omstdout \
-                 --enable-imdiag --disable-impstats --enable-imfile --disable-imfile-tests \
-                 --disable-fmhttp --enable-valgrind --enable-valgrind-testbench \
-                 --disable-helgrind --disable-default-tests --enable-kafka-tests \
-                 --enable-omkafka --enable-gnutls --disable-gnutls-tests --enable-imkafka"
+          export RSYSLOG_DEV_CONTAINER='rsyslog/rsyslog_dev_base_fedora:35'
+          export RSYSLOG_CONFIGURE_OPTIONS_EXTRA="--disable-elasticsearch-tests \
+                 --disable-kafka-tests --enable-debug"
           devtools/devcontainer.sh --rm devtools/run-ci.sh
 
       - name: show error logs (if we errored)

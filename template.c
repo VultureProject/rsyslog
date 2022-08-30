@@ -544,7 +544,7 @@ tplConstruct(rsconf_t *conf)
 
 /* helper to tplAddLine. Parses a constant and generates
  * the necessary structure.
- * Paramter "bDoEscapes" is to support legacy vs. v6+ config system. In
+ * Parameter "bDoEscapes" is to support legacy vs. v6+ config system. In
  * legacy, we must do escapes ourselves, whereas v6+ passes in already
  * escaped strings (which we are NOT permitted to further escape, this would
  * cause invalid result strings!). Note: if escapes are not permitted,
@@ -724,6 +724,10 @@ static void doOptions(unsigned char **pp, struct templateEntry *pTpe)
 			pTpe->data.field.eDateFormat = tplFmtOrdinal;
 		} else if (!strcmp((char*)Buf, "date-week")) {
 			pTpe->data.field.eDateFormat = tplFmtWeek;
+		} else if (!strcmp((char*)Buf, "date-iso-week")) {
+			pTpe->data.field.eDateFormat = tplFmtISOWeek;
+		} else if (!strcmp((char*)Buf, "date-iso-week-year")) {
+			pTpe->data.field.eDateFormat = tplFmtISOWeekYear;
 		} else if(!strcmp((char*)Buf, "date-utc")) {
 			pTpe->data.field.options.bDateInUTC = 1;
 		} else if(!strcmp((char*)Buf, "lowercase")) {
@@ -2235,7 +2239,7 @@ void tplDeleteNew(rsconf_t *conf)
 	}
 }
 
-/* Store the pointer to the last hardcoded teplate */
+/* Store the pointer to the last hardcoded template */
 void tplLastStaticInit(rsconf_t *conf, struct template *tpl)
 {
 	conf->templates.lastStatic = tpl;
@@ -2397,7 +2401,7 @@ void tplPrintList(rsconf_t *conf)
 				  	dbgprintf("[drop last LF in msg] ");
 				}
 				if(pTpe->data.field.has_fields == 1) {
-				  	dbgprintf("[substring, field #%d only (delemiter %d)] ",
+				  	dbgprintf("[substring, field #%d only (delimiter %d)] ",
 						pTpe->data.field.iFieldNr, pTpe->data.field.field_delim);
 				}
 				if(pTpe->data.field.iFromPos != 0 || pTpe->data.field.iToPos != 0) {

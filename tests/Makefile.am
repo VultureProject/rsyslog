@@ -62,16 +62,13 @@ TESTS +=  \
 	es-duplicated-ruleset.sh
 # the following test need to be serialized:
 TESTS +=  \
-	es-basic.sh \
 	es-basic-es6.0.sh \
 	es-basic-es7.14.sh \
+	es-basic.sh \
 	es-basic-bulk.sh
-#es-basic-es6.0.log:  es-basic.log
-#es-basic-es7.14.log: es-basic-es6.0.log
-es-basic-es7.14.log: es-basic.log
-es-basic-es6.0.log:  es-basic-es7.14.log
-es-basic-bulk.log: es-basic-es6.0.log
-#es-basic-bulk.log: es-basic-es7.14.log
+es-basic-es7.14.log: es-basic-es6.0.log
+es-basic.log: es-basic-es7.14.log
+es-basic-bulk.log: es-basic.log
 es-basic-server.log: es-basic-bulk.log
 
 # special "test" for stopping ES once all ES tests are done
@@ -107,6 +104,7 @@ TESTS +=  \
 	es-basic-errfile-popul.sh \
 	es-bulk-errfile-empty.sh \
 	es-bulk-errfile-popul.sh \
+	es-searchType-empty.sh \
 	diskqueue-multithread-es.sh \
 	es-writeoperation.sh
 
@@ -117,7 +115,8 @@ es-basic-errfile-empty.log: es-maxbytes-bulk.log
 es-basic-errfile-popul.log: es-basic-errfile-empty.log
 es-bulk-errfile-empty.log: es-basic-errfile-popul.log
 es-bulk-errfile-popul.log: es-bulk-errfile-empty.log
-diskqueue-multithread-es.log: es-bulk-errfile-popul.log
+es-searchType-empty.log: es-bulk-errfile-popul.log
+diskqueue-multithread-es.log: es-searchType-empty.log
 es-writeoperation.log: diskqueue-multithread-es.log
 elasticsearch-stop.log: es-writeoperation.log
 
@@ -172,6 +171,7 @@ TESTS +=  \
 	empty-hostname.sh \
 	timestamp-3164.sh \
 	timestamp-3339.sh \
+	timestamp-isoweek.sh \
 	timestamp-mysql.sh \
 	timestamp-pgsql.sh \
 	timestamp-subseconds.sh \
@@ -431,6 +431,17 @@ TESTS +=  \
 	rscript_lt_var.sh \
 	rscript_ne.sh \
 	rscript_ne_var.sh \
+	rscript_number_comparison_LE.sh \
+	rscript_number_comparison_LT.sh \
+	rscript_compare_str-numstr.sh \
+	rscript_compare_str-num.sh \
+	rscript_compare_numstr-str.sh \
+	rscript_compare_num-str.sh \
+	rscript_compare_numstr-numstr.sh \
+	rscript_compare_numstr-num.sh \
+	rscript_compare_num-numstr.sh \
+	rscript_compare_num-num.sh \
+	rscript_compare_str-str.sh \
 	rscript_num2ipv4.sh \
 	rscript_int2Hex.sh \
 	rscript_trim.sh \
@@ -492,6 +503,15 @@ TESTS +=  \
 	parsertest-snare_ccoff_udp.sh \
 	parsertest-snare_ccoff_udp2.sh
 
+if ENABLE_LIBZSTD
+TESTS +=  \
+	zstd.sh
+if HAVE_VALGRIND
+TESTS +=  \
+	zstd-vg.sh
+endif # if HAVE_VALGRIND
+endif
+
 if ENABLE_LIBGCRYPT
 TESTS +=  \
 	queue-encryption-disk.sh \
@@ -504,6 +524,7 @@ TESTS +=  \
 	omfile_hup-vg.sh \
 	gzipwr_hup-vg.sh \
 	tcpflood_wrong_option_output.sh \
+	imtcp-octet-framing-too-long-vg.sh \
 	smtradfile-vg.sh \
 	dnscache-TTL-0-vg.sh \
 	include-obj-outside-control-flow-vg.sh \
@@ -531,6 +552,16 @@ TESTS +=  \
 	udp-msgreduc-orgmsg-vg.sh \
 	tcp-msgreduc-vg.sh \
 	rscript_field-vg.sh \
+	rscript_number_comparison_LE-vg.sh \
+	rscript_compare_str-str-vg.sh \
+	rscript_compare_str-num-vg.sh \
+	rscript_compare_str-numstr-vg.sh \
+	rscript_compare_num-str-vg.sh \
+	rscript_compare_numstr-str-vg.sh \
+	rscript_compare_numstr-num-vg.sh \
+	rscript_compare_numstr-numstr-vg.sh \
+	rscript_compare_num-num-vg.sh \
+	rscript_compare_num-numstr-vg.sh \
 	unused_lookup_table-vg.sh \
 	lookup_table-vg.sh \
 	lookup_table_no_hup_reload-vg.sh \
@@ -586,6 +617,7 @@ TESTS +=  \
 	mmanon_simple_12_ipv4.sh \
 	mmanon_simple_33_ipv4.sh \
 	mmanon_simple_8_ipv4.sh \
+	mmanon_simple_mallformed_ipv4.sh \
 	mmanon_random_128_ipv6.sh \
 	mmanon_zero_128_ipv6.sh \
 	mmanon_zero_96_ipv6.sh \
@@ -716,6 +748,7 @@ TESTS +=  \
 	mysql-actq-mt.sh \
 	mysql-actq-mt-withpause.sh \
 	action-tx-single-processing.sh \
+	action-tx-errfile-maxsize.sh \
 	action-tx-errfile.sh
 
 mysql-basic.log: mysqld-start.log
@@ -895,7 +928,8 @@ TESTS +=  \
 	omhttp-batch-jsonarray-vg.sh \
 	omhttp-batch-kafkarest-retry-vg.sh \
 	omhttp-batch-lokirest-retry-vg.sh \
-	omhttp-retry-vg.sh
+	omhttp-retry-vg.sh \
+	omhttp-batch-lokirest-vg.sh
 endif
 endif
 
@@ -1077,6 +1111,7 @@ TESTS +=  \
 	omfile-outchannel-many.sh
 if HAVE_VALGRIND
 TESTS +=  \
+	imptcp-octet-framing-too-long-vg.sh \
 	imptcp_conndrop-vg.sh
 if ENABLE_FMHASH
 TESTS +=  \
@@ -1530,6 +1565,7 @@ TESTS += \
 	imfile-symlink.sh \
 	imfile-symlink-multi.sh \
 	imfile-logrotate.sh \
+	imfile-logrotate-async.sh \
 	imfile-logrotate-multiple.sh \
 	imfile-logrotate-copytruncate.sh \
 	imfile-logrotate-nocopytruncate.sh \
@@ -1800,6 +1836,7 @@ EXTRA_DIST= \
 	proprepltest-rfctag.sh \
 	timestamp-3164.sh \
 	timestamp-3339.sh \
+	timestamp-isoweek.sh \
 	timestamp-mysql.sh \
 	timestamp-pgsql.sh \
 	timestamp-subseconds.sh \
@@ -1840,6 +1877,28 @@ EXTRA_DIST= \
 	rscript_gt_var.sh \
 	rscript_ne.sh \
 	rscript_ne_var.sh \
+	rscript_number_comparison_LE.sh \
+	rscript_number_comparison_LE-vg.sh \
+	rscript_number_comparison_LT.sh \
+	rscript_compare_str-numstr.sh \
+	rscript_compare_str-num.sh \
+	rscript_compare_numstr-str.sh \
+	rscript_compare_num-str.sh \
+	rscript_compare_numstr-numstr.sh \
+	rscript_compare_numstr-num.sh \
+	rscript_compare_num-numstr.sh \
+	rscript_compare_num-num.sh \
+	rscript_compare_str-str.sh \
+	rscript_compare_str-str-vg.sh \
+	rscript_compare_str-num-vg.sh \
+	rscript_compare_str-numstr-vg.sh \
+	rscript_compare_num-str-vg.sh \
+	rscript_compare_numstr-str-vg.sh \
+	rscript_compare_numstr-num-vg.sh \
+	rscript_compare_numstr-numstr-vg.sh \
+	rscript_compare_num-num-vg.sh \
+	rscript_compare_num-numstr-vg.sh \
+	rscript_compare-common.sh \
 	rscript_num2ipv4.sh \
 	rscript_int2Hex.sh \
 	rscript_trim.sh \
@@ -1909,6 +1968,7 @@ EXTRA_DIST= \
 	mmanon_simple_12_ipv4.sh \
 	mmanon_simple_33_ipv4.sh \
 	mmanon_simple_8_ipv4.sh \
+	mmanon_simple_mallformed_ipv4.sh \
 	mmanon_random_128_ipv6.sh \
 	mmanon_zero_128_ipv6.sh \
 	mmanon_zero_96_ipv6.sh \
@@ -1931,6 +1991,8 @@ EXTRA_DIST= \
 	omfwd-keepalive.sh \
 	omfwd_fast_imuxsock.sh \
 	omfile_hup-vg.sh \
+	zstd.sh \
+	zstd-vg.sh \
 	gzipwr_hup-vg.sh \
 	omusrmsg-noabort-legacy.sh \
 	omusrmsg-errmsg-no-params.sh \
@@ -2077,6 +2139,7 @@ EXTRA_DIST= \
 	mmjsonparse_simple.sh \
 	mmjsonparse-invalid-containerName.sh \
 	wtpShutdownAll-assertionFailure.sh \
+	imptcp-octet-framing-too-long-vg.sh \
 	imptcp-oversize-message-display.sh \
 	imptcp-msg-truncation-on-number.sh \
 	imptcp-msg-truncation-on-number2.sh \
@@ -2136,6 +2199,7 @@ EXTRA_DIST= \
 	es-bulk-errfile-popul-erronly.sh \
 	es-bulk-errfile-popul-erronly-interleaved.sh \
 	es-bulk-errfile-popul-def-interleaved.sh \
+	es-searchType-empty.sh \
 	diskqueue-multithread-es.sh \
 	es-basic-vg.sh \
 	es-basic-bulk-vg.sh \
@@ -2155,6 +2219,7 @@ EXTRA_DIST= \
 	allowed-sender-tcp-fail.sh \
 	allowed-sender-tcp-hostname-ok.sh \
 	allowed-sender-tcp-hostname-fail.sh \
+	imtcp-octet-framing-too-long-vg.sh \
 	imtcp-discard-truncated-msg.sh \
 	imtcp-basic.sh \
 	imtcp-basic-hup.sh \
@@ -2325,6 +2390,9 @@ EXTRA_DIST= \
 	sndrcv_omudpspoof_nonstdpt.sh \
 	sndrcv_gzip.sh \
 	action-tx-single-processing.sh \
+	omfwd-errfile-maxsize.sh \
+	omfwd-errfile-maxsize-filled.sh \
+	action-tx-errfile-maxsize.sh \
 	action-tx-errfile.sh \
 	testsuites/action-tx-errfile.result \
 	pipeaction.sh \
@@ -2367,6 +2435,7 @@ EXTRA_DIST= \
 	omhttp-batch-kafkarest.sh \
 	omhttp-batch-lokirest-retry.sh \
 	omhttp-batch-lokirest.sh \
+	omhttp-batch-lokirest-vg.sh \
 	omhttp-batch-newline.sh \
 	omhttp-retry.sh \
 	omhttp-httpheaderkey.sh \
@@ -2507,6 +2576,7 @@ EXTRA_DIST= \
 	imfile-symlink.sh \
 	imfile-symlink-multi.sh \
 	imfile-logrotate.sh \
+	imfile-logrotate-async.sh \
 	imfile-logrotate-copytruncate.sh \
 	imfile-logrotate-nocopytruncate.sh \
 	imfile-logrotate-multiple.sh \

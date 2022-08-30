@@ -976,7 +976,7 @@ startSrvWrkr(tcpsrv_etry_t *const etry)
 	pthread_attr_setstacksize(&sessThrdAttr, 4096*1024);
 	r = pthread_create(&etry->tid, &sessThrdAttr, RunServerThread, etry);
 	if(r != 0) {
-		LogError(errno, NO_ERRCODE, "imtcp error creating server thread");
+		LogError(r, NO_ERRCODE, "imtcp error creating server thread");
 		/* we do NOT abort, as other servers may run - after all, we logged an error */
 	}
 	pthread_attr_destroy(&sessThrdAttr);
@@ -1007,6 +1007,7 @@ CODESTARTrunInput
 	iRet = tcpsrv.Run(tcpsrv_root->tcpsrv);
 
 	/* de-init remaining servers */
+	etry = tcpsrv_root->next;
 	while(etry != NULL) {
 		stopSrvWrkr(etry);
 		etry = etry->next;

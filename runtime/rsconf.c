@@ -33,6 +33,7 @@
 #include <sys/resource.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/socket.h>
 
 #include "rsyslog.h"
 #include "obj.h"
@@ -67,6 +68,7 @@
 #include "modules.h"
 #include "dirty.h"
 #include "template.h"
+#include "timezones.h"
 
 extern char* yytext;
 /* static data */
@@ -113,6 +115,15 @@ static uchar template_StdJSONFmt[] = "\"{\\\"message\\\":\\\"%msg:::json%\\\",\\
 "%HOSTNAME:::json%\\\",\\\"facility\\\":\\\"%syslogfacility-text%\\\",\\\"priority\\\":\\\""
 "%syslogpriority-text%\\\",\\\"timereported\\\":\\\"%timereported:::date-rfc3339%\\\",\\\"timegenerated\\\":\\\""
 "%timegenerated:::date-rfc3339%\\\"}\"";
+static uchar template_FullJSONFmt[] = "\"{\\\"message\\\":\\\"%msg:::json%\\\","
+"\\\"fromhost\\\":\\\"%HOSTNAME:::json%\\\","
+"\\\"programname\\\":\\\"%programname%\\\","
+"\\\"procid\\\":\\\"%PROCID%\\\","
+"\\\"msgid\\\":\\\"%MSGID%\\\","
+"\\\"facility\\\":\\\"%syslogfacility-text%\\\","
+"\\\"priority\\\":\\\"%syslogpriority-text%\\\","
+"\\\"timereported\\\":\\\"%timereported:::date-rfc3339%\\\","
+"\\\"timegenerated\\\":\\\"%timegenerated:::date-rfc3339%\\\"}\"";
 static uchar template_StdClickHouseFmt[] = "\"INSERT INTO rsyslog.SystemEvents (severity, facility, "
 "timestamp, hostname, tag, message) VALUES (%syslogseverity%, %syslogfacility%, "
 "'%timereported:::date-unixtimestamp%', '%hostname%', '%syslogtag%', '%msg%')\",STDSQL";
@@ -163,6 +174,67 @@ static void cnfSetDefaults(rsconf_t *pThis)
 	pThis->templates.last = NULL;
 	pThis->templates.lastStatic = NULL;
 	pThis->actions.nbrActions = 0;
+	pThis->actions.iActionNbr = 0;
+	pThis->globals.pszWorkDir = NULL;
+	pThis->globals.bDropMalPTRMsgs = 0;
+	pThis->globals.operatingStateFile = NULL;
+	pThis->globals.iGnuTLSLoglevel = 0;
+	pThis->globals.debugOnShutdown = 0;
+	pThis->globals.pszDfltNetstrmDrvrCAF = NULL;
+	pThis->globals.pszDfltNetstrmDrvrCertFile = NULL;
+	pThis->globals.pszDfltNetstrmDrvrKeyFile = NULL;
+	pThis->globals.pszDfltNetstrmDrvr = NULL;
+	pThis->globals.oversizeMsgErrorFile = NULL;
+	pThis->globals.reportOversizeMsg = 1;
+	pThis->globals.oversizeMsgInputMode = 0;
+	pThis->globals.reportChildProcessExits = REPORT_CHILD_PROCESS_EXITS_ERRORS;
+	pThis->globals.bActionReportSuspension = 1;
+	pThis->globals.bActionReportSuspensionCont = 0;
+	pThis->globals.janitorInterval = 10;
+	pThis->globals.reportNewSenders = 0;
+	pThis->globals.reportGoneAwaySenders = 0;
+	pThis->globals.senderStatsTimeout = 12 * 60 * 60; /* 12 hr timeout for senders */
+	pThis->globals.senderKeepTrack = 0;
+	pThis->globals.inputTimeoutShutdown = 1000;
+	pThis->globals.iDefPFFamily = PF_UNSPEC;
+	pThis->globals.ACLAddHostnameOnFail = 0;
+	pThis->globals.ACLDontResolve = 0;
+	pThis->globals.bDisableDNS = 0;
+	pThis->globals.bProcessInternalMessages = 0;
+	const char *const log_dflt = getenv("RSYSLOG_DFLT_LOG_INTERNAL");
+	if(log_dflt != NULL && !strcmp(log_dflt, "1"))
+		pThis->globals.bProcessInternalMessages = 1;
+	pThis->globals.glblDevOptions = 0;
+	pThis->globals.intMsgRateLimitItv = 5;
+	pThis->globals.intMsgRateLimitBurst = 500;
+	pThis->globals.intMsgsSeverityFilter = DFLT_INT_MSGS_SEV_FILTER;
+	pThis->globals.permitCtlC = glblPermitCtlC;
+
+	pThis->globals.actq_dflt_toQShutdown = 10;
+	pThis->globals.actq_dflt_toActShutdown = 1000;
+	pThis->globals.actq_dflt_toEnq = 2000;
+	pThis->globals.actq_dflt_toWrkShutdown = 60000;
+
+	pThis->globals.ruleset_dflt_toQShutdown = 1500;
+	pThis->globals.ruleset_dflt_toActShutdown = 1000;
+	pThis->globals.ruleset_dflt_toEnq = 2000;
+	pThis->globals.ruleset_dflt_toWrkShutdown = 60000;
+
+	pThis->globals.dnscacheDefaultTTL = 24 * 60 * 60;
+	pThis->globals.dnscacheEnableTTL = 0;
+	pThis->globals.shutdownQueueDoubleSize = 0;
+	pThis->globals.optionDisallowWarning = 1;
+	pThis->globals.bSupportCompressionExtension = 1;
+	#ifdef ENABLE_LIBLOGGING_STDLOG
+		pThis->globals.stdlog_hdl = stdlog_open("rsyslogd", 0, STDLOG_SYSLOG, NULL);
+		pThis->globals.stdlog_chanspec = NULL;
+	#endif
+	pThis->globals.iMaxLine = 8096;
+
+	/* timezone specific*/
+	pThis->timezones.tzinfos = NULL;
+	pThis->timezones.ntzinfos = 0;
+
 	/* queue params */
 	pThis->globals.mainQ.iMainMsgQueueSize = 100000;
 	pThis->globals.mainQ.iMainMsgQHighWtrMark = 80000;
@@ -186,6 +258,20 @@ static void cnfSetDefaults(rsconf_t *pThis)
 	pThis->globals.mainQ.bMainMsgQSaveOnShutdown = 1;
 	pThis->globals.mainQ.iMainMsgQueueDeqtWinFromHr = 0;
 	pThis->globals.mainQ.iMainMsgQueueDeqtWinToHr = 25;
+	pThis->pMsgQueue = NULL;
+
+	pThis->globals.parser.cCCEscapeChar = '#';
+	pThis->globals.parser.bDropTrailingLF = 1;
+	pThis->globals.parser.bEscapeCCOnRcv = 1;
+	pThis->globals.parser.bSpaceLFOnRcv = 0;
+	pThis->globals.parser.bEscape8BitChars = 0;
+	pThis->globals.parser.bEscapeTab = 1;
+	pThis->globals.parser.bParserEscapeCCCStyle = 0;
+	pThis->globals.parser.bPermitSlashInProgramname = 0;
+	pThis->globals.parser.bParseHOSTNAMEandTAG = 1;
+
+	pThis->parsers.pDfltParsLst = NULL;
+	pThis->parsers.pParsLstRoot = NULL;
 }
 
 
@@ -241,8 +327,22 @@ CODESTARTobjDestruct(rsconf)
 	dynstats_destroyAllBuckets();
 	perctileBucketsDestruct();
 	ochDeleteAll();
+	freeTimezones(pThis);
+	parser.DestructParserList(&pThis->parsers.pDfltParsLst);
+	parser.destroyMasterParserList(pThis->parsers.pParsLstRoot);
 	free(pThis->globals.mainQ.pszMainMsgQFName);
 	free(pThis->globals.pszConfDAGFile);
+	free(pThis->globals.pszWorkDir);
+	free(pThis->globals.operatingStateFile);
+	free(pThis->globals.pszDfltNetstrmDrvrCAF);
+	free(pThis->globals.pszDfltNetstrmDrvrCertFile);
+	free(pThis->globals.pszDfltNetstrmDrvrKeyFile);
+	free(pThis->globals.pszDfltNetstrmDrvr);
+	free(pThis->globals.oversizeMsgErrorFile);
+	#ifdef ENABLE_LIBLOGGING_STDLOG
+		stdlog_close(pThis->globals.stdlog_hdl);
+		free(pThis->globals.stdlog_chanspec);
+	#endif
 	lookupDestroyCnf();
 	llDestroy(&(pThis->rulesets.llRulesets));
 ENDobjDestruct(rsconf)
@@ -266,7 +366,7 @@ BEGINobjDebugPrint(rsconf) /* be sure to specify the object type also in END and
 	dbgprintf("  bErrMsgToStderr.....................: %d\n",
 		  pThis->globals.bErrMsgToStderr);
 	dbgprintf("  drop Msgs with malicious PTR Record : %d\n",
-		  glbl.GetDropMalPTRMsgs());
+		  glbl.GetDropMalPTRMsgs(pThis));
 	ruleset.DebugPrintAll(pThis);
 	dbgprintf("\n");
 	if(pThis->globals.bDebugPrintTemplateList)
@@ -297,8 +397,8 @@ BEGINobjDebugPrint(rsconf) /* be sure to specify the object type also in END and
 	setQPROP(qqueueSetiMinMsgsPerWrkr, "$MainMsgQueueWorkerThreadMinimumMessages", 100);
 	setQPROP(qqueueSetbSaveOnShutdown, "$MainMsgQueueSaveOnShutdown", 1);
 	 */
-	dbgprintf("Work Directory: '%s'.\n", glbl.GetWorkDir());
-	ochPrintList();
+	dbgprintf("Work Directory: '%s'.\n", glbl.GetWorkDir(pThis));
+	ochPrintList(pThis);
 	dbgprintf("Modules used in this configuration:\n");
 	for(modNode = pThis->modules.root ; modNode != NULL ; modNode = modNode->next) {
 		dbgprintf("    %s\n", module.GetName(modNode->pMod));
@@ -327,7 +427,7 @@ parserProcessCnf(struct cnfobj *o)
 	cnfparamsPrint(&parserpblk, pvals);
 	paramIdx = cnfparamGetIdx(&parserpblk, "name");
 	parserName = (uchar*)es_str2cstr(pvals[paramIdx].val.d.estr, NULL);
-	if(parser.FindParser(&myparser, parserName) != RS_RET_PARSER_NOT_FOUND) {
+	if(parser.FindParser(loadConf->parsers.pParsLstRoot, &myparser, parserName) != RS_RET_PARSER_NOT_FOUND) {
 		LogError(0, RS_RET_PARSER_NAME_EXISTS,
 			"parser module name '%s' already exists", parserName);
 		ABORT_FINALIZE(RS_RET_PARSER_NAME_EXISTS);
@@ -549,13 +649,13 @@ void cnfDoBSDHost(char *ln)
  * if something goes wrong, the function never returns
  */
 static
-rsRetVal doDropPrivGid(void)
+rsRetVal doDropPrivGid(rsconf_t *cnf)
 {
 	int res;
 	uchar szBuf[1024];
 	DEFiRet;
 
-	if(!ourConf->globals.gidDropPrivKeepSupplemental) {
+	if(!cnf->globals.gidDropPrivKeepSupplemental) {
 		res = setgroups(0, NULL); /* remove all supplemental group IDs */
 		if(res) {
 			LogError(errno, RS_RET_ERR_DROP_PRIV,
@@ -564,15 +664,15 @@ rsRetVal doDropPrivGid(void)
 		}
 		DBGPRINTF("setgroups(0, NULL): %d\n", res);
 	}
-	res = setgid(ourConf->globals.gidDropPriv);
+	res = setgid(cnf->globals.gidDropPriv);
 	if(res) {
 		LogError(errno, RS_RET_ERR_DROP_PRIV,
-				"could not set requested group id %d", ourConf->globals.gidDropPriv);
+				"could not set requested group id %d", cnf->globals.gidDropPriv);
 		ABORT_FINALIZE(RS_RET_ERR_DROP_PRIV);
 	}
-	DBGPRINTF("setgid(%d): %d\n", ourConf->globals.gidDropPriv, res);
+	DBGPRINTF("setgid(%d): %d\n", cnf->globals.gidDropPriv, res);
 	snprintf((char*)szBuf, sizeof(szBuf), "rsyslogd's groupid changed to %d",
-		 ourConf->globals.gidDropPriv);
+		 cnf->globals.gidDropPriv);
 	logmsgInternal(NO_ERRCODE, LOG_SYSLOG|LOG_INFO, szBuf, 0);
 finalize_it:
 	RETiRet;
@@ -584,7 +684,7 @@ finalize_it:
  * Note that such an abort can cause damage to on-disk structures, so we should
  * re-design the "interface" in the long term. -- rgerhards, 2008-11-19
  */
-static void doDropPrivUid(const int iUid)
+static void doDropPrivUid(rsconf_t *cnf)
 {
 	int res;
 	uchar szBuf[1024];
@@ -594,23 +694,24 @@ static void doDropPrivUid(const int iUid)
 	/* Try to set appropriate supplementary groups for this user.
 	 * Failure is not fatal.
 	 */
-	pw = getpwuid(iUid);
+	pw = getpwuid(cnf->globals.uidDropPriv);
 	if (pw) {
 		gid = getgid();
 		res = initgroups(pw->pw_name, gid);
 		DBGPRINTF("initgroups(%s, %ld): %d\n", pw->pw_name, (long) gid, res);
 	} else {
-		LogError(errno, NO_ERRCODE, "could not get username for userid '%d'", iUid);
+		LogError(errno, NO_ERRCODE, "could not get username for userid '%d'",
+			cnf->globals.uidDropPriv);
 	}
 
-	res = setuid(iUid);
+	res = setuid(cnf->globals.uidDropPriv);
 	if(res) {
 		/* if we can not set the userid, this is fatal, so let's unconditionally abort */
 		perror("could not set requested userid");
 		exit(1);
 	}
-	DBGPRINTF("setuid(%d): %d\n", iUid, res);
-	snprintf((char*)szBuf, sizeof(szBuf), "rsyslogd's userid changed to %d", iUid);
+	DBGPRINTF("setuid(%d): %d\n", cnf->globals.uidDropPriv, res);
+	snprintf((char*)szBuf, sizeof(szBuf), "rsyslogd's userid changed to %d", cnf->globals.uidDropPriv);
 	logmsgInternal(NO_ERRCODE, LOG_SYSLOG|LOG_INFO, szBuf, 0);
 }
 
@@ -626,15 +727,15 @@ dropPrivileges(rsconf_t *cnf)
 	DEFiRet;
 
 	if(cnf->globals.gidDropPriv != 0) {
-		CHKiRet(doDropPrivGid());
+		CHKiRet(doDropPrivGid(cnf));
 		DBGPRINTF("group privileges have been dropped to gid %u\n", (unsigned)
-			  ourConf->globals.gidDropPriv);
+			  cnf->globals.gidDropPriv);
 	}
 
 	if(cnf->globals.uidDropPriv != 0) {
-		doDropPrivUid(ourConf->globals.uidDropPriv);
+		doDropPrivUid(cnf);
 		DBGPRINTF("user privileges have been dropped to uid %u\n", (unsigned)
-			  ourConf->globals.uidDropPriv);
+			  cnf->globals.uidDropPriv);
 	}
 
 finalize_it:
@@ -667,7 +768,7 @@ tellModulesConfigLoadDone(void)
 			DBGPRINTF("calling endCnfLoad() for module '%s'\n", node->pMod->pszName);
 			node->pMod->endCnfLoad(node->modCnf);
 		}
-		node = module.GetNxtCnfType(runConf, node, eMOD_ANY);
+		node = module.GetNxtCnfType(loadConf, node, eMOD_ANY); // loadConf -> runConf
 	}
 
 	return RS_RET_OK; /* intentional: we do not care about module errors */
@@ -694,7 +795,7 @@ tellModulesCheckConfig(void)
 				node->canActivate = 0;
 			}
 		}
-		node = module.GetNxtCnfType(runConf, node, eMOD_ANY);
+		node = module.GetNxtCnfType(loadConf, node, eMOD_ANY); // runConf -> loadConf
 	}
 
 	return RS_RET_OK; /* intentional: we do not care about module errors */
@@ -808,36 +909,61 @@ startInputModules(void)
 	return RS_RET_OK; /* intentional: we do not care about module errors */
 }
 
+/* load the main queue */
+static rsRetVal
+loadMainQueue(void)
+{
+	DEFiRet;
+	struct cnfobj *mainqCnfObj;
+
+	mainqCnfObj = glbl.GetmainqCnfObj();
+	DBGPRINTF("loadMainQueue: mainq cnf obj ptr is %p\n", mainqCnfObj);
+	/* create message queue */
+	iRet = createMainQueue(&loadConf->pMsgQueue, UCHAR_CONSTANT("main Q"),
+		    		(mainqCnfObj == NULL) ? NULL : mainqCnfObj->nvlst);
+	if (iRet == RS_RET_OK) {
+		if (runConf != NULL) { /* dynamic config reload */
+			int areEqual = queuesEqual(loadConf->pMsgQueue, runConf->pMsgQueue);
+			DBGPRINTF("Comparison of old and new main queues: %d\n", areEqual);
+			if (areEqual) { /* content of the new main queue is the same as it was in previous conf */
+				qqueueDestruct(&loadConf->pMsgQueue);
+				loadConf->pMsgQueue = runConf->pMsgQueue;
+			}
+		}
+	}
+
+	if(iRet != RS_RET_OK) {
+		/* no queue is fatal, we need to give up in that case... */
+		fprintf(stderr, "fatal error %d: could not create message queue - rsyslogd can not run!\n", iRet);
+		FINALIZE;
+	}
+finalize_it:
+	glblDestructMainqCnfObj();
+	RETiRet;
+}
 
 /* activate the main queue */
 static rsRetVal
 activateMainQueue(void)
 {
-	struct cnfobj *mainqCnfObj;
 	DEFiRet;
 
-	mainqCnfObj = glbl.GetmainqCnfObj();
-	DBGPRINTF("activateMainQueue: mainq cnf obj ptr is %p\n", mainqCnfObj);
-	/* create message queue */
-	iRet = createMainQueue(&pMsgQueue, UCHAR_CONSTANT("main Q"),
-		    		(mainqCnfObj == NULL) ? NULL : mainqCnfObj->nvlst);
-	if(iRet == RS_RET_OK) {
-		iRet = startMainQueue(pMsgQueue);
-	}
+	DBGPRINTF("activateMainQueue: will try to activate main queue %p\n", runConf->pMsgQueue);
+
+	iRet = startMainQueue(runConf, runConf->pMsgQueue);
 	if(iRet != RS_RET_OK) {
 		/* no queue is fatal, we need to give up in that case... */
 		fprintf(stderr, "fatal error %d: could not create message queue - rsyslogd can not run!\n", iRet);
 		FINALIZE;
 	}
 
-	if(ourConf->globals.mainQ.MainMsgQueType == QUEUETYPE_DIRECT) {
+	if(runConf->globals.mainQ.MainMsgQueType == QUEUETYPE_DIRECT) {
 		PREFER_STORE_0_TO_INT(&bHaveMainQueue);
 	} else {
 		PREFER_STORE_1_TO_INT(&bHaveMainQueue);
 	}
 	DBGPRINTF("Main processing queue is initialized and running\n");
 finalize_it:
-	glblDestructMainqCnfObj();
 	RETiRet;
 }
 
@@ -854,6 +980,20 @@ setUmask(int iUmask)
 	return RS_RET_OK;
 }
 
+/* Remove resources from previous config */
+static void
+cleanupOldCnf(rsconf_t *cnf)
+{
+	if (cnf == NULL)
+		FINALIZE;
+
+	if (runConf->pMsgQueue != cnf->pMsgQueue)
+		qqueueDestruct(&cnf->pMsgQueue);
+
+finalize_it:
+	return;
+}
+
 
 /* Activate an already-loaded configuration. The configuration will become
  * the new running conf (if successful). Note that in theory this method may
@@ -865,9 +1005,11 @@ static rsRetVal
 activate(rsconf_t *cnf)
 {
 	DEFiRet;
+	rsconf_t *runCnfOld = runConf;
 
 	/* at this point, we "switch" over to the running conf */
 	runConf = cnf;
+	loadConf = NULL;
 #	if	0 /* currently the DAG is not supported -- code missing! */
 	/* TODO: re-enable this functionality some time later! */
 	/* check if we need to generate a config DAG and, if so, do that */
@@ -898,6 +1040,7 @@ activate(rsconf_t *cnf)
 	qqueueDoneLoadCnf(); /* we no longer need config-load-only data structures */
 
 	dbgprintf("configuration %p activated\n", cnf);
+	cleanupOldCnf(runCnfOld);
 
 finalize_it:
 	RETiRet;
@@ -1271,6 +1414,8 @@ initLegacyConf(void)
 	tplAddLine(ourConf, " StdPgSQLFmt", &pTmp);
 	pTmp = template_StdJSONFmt;
 	tplAddLine(ourConf, " StdJSONFmt", &pTmp);
+	pTmp = template_FullJSONFmt;
+	tplAddLine(ourConf, " FullJSONFmt", &pTmp);
 	pTmp = template_StdClickHouseFmt;
 	tplAddLine(ourConf, " StdClickHouseFmt", &pTmp);
 	pTmp = template_spoofadr;
@@ -1281,31 +1426,31 @@ finalize_it:
 }
 
 
-/* validate the current configuration, generate error messages, do
+/* validate the configuration pointed by conf, generate error messages, do
  * optimizations, etc, etc,...
  */
 static rsRetVal
-validateConf(void)
+validateConf(rsconf_t *cnf)
 {
 	DEFiRet;
 
 	/* some checks */
-	if(ourConf->globals.mainQ.iMainMsgQueueNumWorkers < 1) {
+	if(cnf->globals.mainQ.iMainMsgQueueNumWorkers < 1) {
 		LogError(0, NO_ERRCODE, "$MainMsgQueueNumWorkers must be at least 1! Set to 1.\n");
-		ourConf->globals.mainQ.iMainMsgQueueNumWorkers = 1;
+		cnf->globals.mainQ.iMainMsgQueueNumWorkers = 1;
 	}
 
-	if(ourConf->globals.mainQ.MainMsgQueType == QUEUETYPE_DISK) {
+	if(cnf->globals.mainQ.MainMsgQueType == QUEUETYPE_DISK) {
 		errno = 0;	/* for logerror! */
-		if(glbl.GetWorkDir() == NULL) {
+		if(glbl.GetWorkDir(cnf) == NULL) {
 			LogError(0, NO_ERRCODE, "No $WorkDirectory specified - can not run main "
 					"message queue in 'disk' mode. Using 'FixedArray' instead.\n");
-			ourConf->globals.mainQ.MainMsgQueType = QUEUETYPE_FIXED_ARRAY;
+			cnf->globals.mainQ.MainMsgQueType = QUEUETYPE_FIXED_ARRAY;
 		}
-		if(ourConf->globals.mainQ.pszMainMsgQFName == NULL) {
+		if(cnf->globals.mainQ.pszMainMsgQFName == NULL) {
 			LogError(0, NO_ERRCODE, "No $MainMsgQueueFileName specified - can not run main "
 				"message queue in 'disk' mode. Using 'FixedArray' instead.\n");
-			ourConf->globals.mainQ.MainMsgQueType = QUEUETYPE_FIXED_ARRAY;
+			cnf->globals.mainQ.MainMsgQueType = QUEUETYPE_FIXED_ARRAY;
 		}
 	}
 	RETiRet;
@@ -1328,7 +1473,7 @@ load(rsconf_t **cnf, uchar *confFile)
 	DEFiRet;
 
 	CHKiRet(rsconfConstruct(&loadConf));
-ourConf = loadConf; // TODO: remove, once ourConf is gone!
+	ourConf = loadConf; // TODO: remove, once ourConf is gone!
 
 	CHKiRet(loadBuildInModules());
 	CHKiRet(initLegacyConf());
@@ -1361,13 +1506,14 @@ ourConf = loadConf; // TODO: remove, once ourConf is gone!
 		ABORT_FINALIZE(RS_RET_NO_ACTIONS);
 	}
 	tellLexEndParsing();
-	DBGPRINTF("Number of actions in this configuration: %d\n", iActionNbr);
+	DBGPRINTF("Number of actions in this configuration: %d\n", loadConf->actions.iActionNbr);
 
 	CHKiRet(tellCoreConfigLoadDone());
 	tellModulesConfigLoadDone();
 
 	tellModulesCheckConfig();
-	CHKiRet(validateConf());
+	CHKiRet(validateConf(loadConf));
+	CHKiRet(loadMainQueue());
 
 	/* we are done checking the config - now validate if we should actually run or not.
 	 * If not, terminate. -- rgerhards, 2008-07-25
@@ -1381,7 +1527,7 @@ ourConf = loadConf; // TODO: remove, once ourConf is gone!
 
 	/* all OK, pass loaded conf to caller */
 	*cnf = loadConf;
-// TODO: enable this once all config code is moved to here!	loadConf = NULL;
+	// TODO: enable this once all config code is moved to here!	loadConf = NULL;
 
 	dbgprintf("rsyslog finished loading master config %p\n", loadConf);
 	rsconfDebugPrint(loadConf);

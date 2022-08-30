@@ -28,9 +28,13 @@
 #include <stdlib.h>
 #include <assert.h>
 #include <string.h>
+#include <strings.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 #include <openssl/err.h>
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L && !defined(LIBRESSL_VERSION_NUMBER)
+#	include <openssl/bioerr.h>
+#endif
 #include <openssl/engine.h>
 #include <errno.h>
 #include <sys/stat.h>
@@ -53,6 +57,7 @@
 #include "nsdsel_ossl.h"
 #include "nsd_ossl.h"
 #include "unicode-helper.h"
+#include "rsconf.h"
 /* things to move to some better place/functionality - TODO */
 // #define CRLFILE "crl.pem"
 
@@ -181,7 +186,7 @@ int opensslh_THREAD_cleanup(void)
 /*-------------------------------------- MT OpenSSL helpers -----------------------------------------*/
 
 /*--------------------------------------OpenSSL helpers ------------------------------------------*/
-void osslLastSSLErrorMsg(int ret, SSL *ssl, int severity, const char* pszCallSource)
+void osslLastSSLErrorMsg(int ret, SSL *ssl, int severity, const char* pszCallSource, const char* pszOsslApi)
 {
 	unsigned long un_error = 0;
 	int iSSLErr = 0;
@@ -193,10 +198,15 @@ void osslLastSSLErrorMsg(int ret, SSL *ssl, int severity, const char* pszCallSou
 		iSSLErr = SSL_get_error(ssl, ret);
 
 		/* Output error message */
-		LogMsg(0, RS_RET_NO_ERRCODE, severity, "%s Error in '%s': '%s(%d)' with ret=%d\n",
+		LogMsg(0, RS_RET_NO_ERRCODE, severity,
+			"%s Error in '%s': '%s(%d)' with ret=%d, errno=%d, sslapi='%s'\n",
 			(iSSLErr == SSL_ERROR_SSL ? "SSL_ERROR_SSL" :
 			(iSSLErr == SSL_ERROR_SYSCALL ? "SSL_ERROR_SYSCALL" : "SSL_ERROR_UNKNOWN")),
-			pszCallSource, ERR_error_string(iSSLErr, NULL), iSSLErr, ret);
+			pszCallSource, ERR_error_string(iSSLErr, NULL),
+			iSSLErr,
+			ret,
+			errno,
+			pszOsslApi);
 	}
 
 	/* Loop through ERR_get_error */
@@ -287,16 +297,20 @@ int verify_callback(int status, X509_STORE_CTX *store)
 	return status;
 }
 
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L && !defined(LIBRESSL_VERSION_NUMBER)
+long BIO_debug_callback_ex(BIO *bio, int cmd, const char __attribute__((unused)) *argp,
+			   size_t __attribute__((unused)) len, int argi, long __attribute__((unused)) argl,
+			   int ret, size_t __attribute__((unused)) *processed)
+#else
 long BIO_debug_callback(BIO *bio, int cmd, const char __attribute__((unused)) *argp,
 			int argi, long __attribute__((unused)) argl, long ret)
+#endif
 {
+	long ret2 = ret; // Helper value to avoid printf compile errors long<>int
 	long r = 1;
-
 	if (BIO_CB_RETURN & cmd)
 		r = ret;
-
 	dbgprintf("openssl debugmsg: BIO[%p]: ", (void *)bio);
-
 	switch (cmd) {
 	case BIO_CB_FREE:
 		dbgprintf("Free - %s\n", RSYSLOG_BIO_method_name(bio));
@@ -343,19 +357,19 @@ long BIO_debug_callback(BIO *bio, int cmd, const char __attribute__((unused)) *a
 			RSYSLOG_BIO_method_name(bio));
 		break;
 	case BIO_CB_RETURN | BIO_CB_READ:
-		dbgprintf("read return %ld\n", ret);
+		dbgprintf("read return %ld\n", ret2);
 		break;
 	case BIO_CB_RETURN | BIO_CB_WRITE:
-		dbgprintf("write return %ld\n", ret);
+		dbgprintf("write return %ld\n", ret2);
 		break;
 	case BIO_CB_RETURN | BIO_CB_GETS:
-		dbgprintf("gets return %ld\n", ret);
+		dbgprintf("gets return %ld\n", ret2);
 		break;
 	case BIO_CB_RETURN | BIO_CB_PUTS:
-		dbgprintf("puts return %ld\n", ret);
+		dbgprintf("puts return %ld\n", ret2);
 		break;
 	case BIO_CB_RETURN | BIO_CB_CTRL:
-		dbgprintf("ctrl return %ld\n", ret);
+		dbgprintf("ctrl return %ld\n", ret2);
 		break;
 	default:
 		dbgprintf("bio callback - unknown type (%d)\n", cmd);
@@ -373,7 +387,7 @@ long BIO_debug_callback(BIO *bio, int cmd, const char __attribute__((unused)) *a
  * rgerhards, 2008-05-08
  */
 static rsRetVal
-GenFingerprintStr(uchar *pFingerprint, size_t sizeFingerprint, cstr_t **ppStr)
+GenFingerprintStr(uchar *pFingerprint, size_t sizeFingerprint, cstr_t **ppStr, const char* prefix)
 {
 	cstr_t *pStr = NULL;
 	uchar buf[4];
@@ -381,7 +395,7 @@ GenFingerprintStr(uchar *pFingerprint, size_t sizeFingerprint, cstr_t **ppStr)
 	DEFiRet;
 
 	CHKiRet(rsCStrConstruct(&pStr));
-	CHKiRet(rsCStrAppendStrWithLen(pStr, (uchar*)"SHA1", 4));
+	CHKiRet(rsCStrAppendStrWithLen(pStr, (uchar*) prefix, strlen(prefix)));
 	for(i = 0 ; i < sizeFingerprint ; ++i) {
 		snprintf((char*)buf, sizeof(buf), ":%2.2X", pFingerprint[i]);
 		CHKiRet(rsCStrAppendStrWithLen(pStr, buf, 3));
@@ -413,9 +427,19 @@ osslGlblInit(void)
 
 	/* Load readable error strings */
 	SSL_load_error_strings();
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L && !defined(LIBRESSL_VERSION_NUMBER)
+	/*
+	* ERR_load_*(), ERR_func_error_string(), ERR_get_error_line(), ERR_get_error_line_data(), ERR_get_state()
+	* OpenSSL now loads error strings automatically so these functions are not needed.
+	* SEE FOR MORE:
+	*	https://www.openssl.org/docs/manmaster/man7/migration_guide.html
+	*
+	*/
+#else
+	/* Load error strings into mem*/
 	ERR_load_BIO_strings();
 	ERR_load_crypto_strings();
-
+#endif
 	RETiRet;
 }
 
@@ -433,7 +457,6 @@ osslRecordRecv(nsd_ossl_t *pThis)
 	ssize_t lenRcvd;
 	DEFiRet;
 	int err;
-	int local_errno;
 
 	ISOBJ_TYPE_assert(pThis, nsd_ossl);
 	DBGPRINTF("osslRecordRecv: start\n");
@@ -470,22 +493,27 @@ sslerr:
 			DBGPRINTF("osslRecordRecv: SSL_ERROR_ZERO_RETURN received, connection may closed already\n");
 			ABORT_FINALIZE(RS_RET_RETRY);
 		}
+		else if(err == SSL_ERROR_SYSCALL) {
+			/* Output error and abort */
+			osslLastSSLErrorMsg(lenRcvd, pThis->ssl, LOG_INFO, "osslRecordRecv", "SSL_read");
+			iRet = RS_RET_NO_ERRCODE;
+			/* Check for underlaying socket errors **/
+			if (	errno == ECONNRESET) {
+				dbgprintf("osslRecordRecv: SSL_ERROR_SYSCALL Errno %d, connection reset by peer\n",
+					errno);
+				/* Connection was dropped from remote site */
+				iRet = RS_RET_CLOSED;
+			} else {
+				DBGPRINTF("osslRecordRecv: SSL_ERROR_SYSCALLErrno %d\n", errno);
+			}
+			ABORT_FINALIZE(iRet);
+		}
 		else if(err != SSL_ERROR_WANT_READ &&
 			err != SSL_ERROR_WANT_WRITE) {
 			DBGPRINTF("osslRecordRecv: SSL_get_error #1 = %d, lenRcvd=%zd\n", err, lenRcvd);
-			/* Save errno */
-			local_errno = errno;
-
 			/* Output OpenSSL error*/
-			osslLastSSLErrorMsg(lenRcvd, pThis->ssl, LOG_ERR, "osslRecordRecv");
-			/* Check for underlaying socket errors **/
-			if (local_errno == ECONNRESET) {
-				DBGPRINTF("osslRecordRecv: Errno %d, connection resetted by peer\n", local_errno);
-				ABORT_FINALIZE(RS_RET_CLOSED);
-			} else {
-				DBGPRINTF("osslRecordRecv: Errno %d\n", local_errno);
-				ABORT_FINALIZE(RS_RET_NO_ERRCODE);
-			}
+			osslLastSSLErrorMsg(lenRcvd, pThis->ssl, LOG_ERR, "osslRecordRecv", "SSL_read");
+			ABORT_FINALIZE(RS_RET_NO_ERRCODE);
 		} else {
 			DBGPRINTF("osslRecordRecv: SSL_get_error #2 = %d, lenRcvd=%zd\n", err, lenRcvd);
 			pThis->rtryCall =  osslRtry_recv;
@@ -512,7 +540,7 @@ osslInitSession(nsd_ossl_t *pThis, osslSslState_t osslType) /* , nsd_ossl_t *pSe
 
 	if(!(pThis->ssl = SSL_new(pThis->ctx))) {
 		pThis->ssl = NULL;
-		osslLastSSLErrorMsg(0, pThis->ssl, LOG_ERR, "osslInitSession");
+		osslLastSSLErrorMsg(0, pThis->ssl, LOG_ERR, "osslInitSession", "SSL_new");
 		ABORT_FINALIZE(RS_RET_NO_ERRCODE);
 	}
 
@@ -550,7 +578,11 @@ osslInitSession(nsd_ossl_t *pThis, osslSslState_t osslType) /* , nsd_ossl_t *pSe
 	dbgprintf("osslInitSession: Init conn BIO[%p] done\n", (void *)conn);
 
 	/* Set debug Callback for conn BIO as well! */
+#if OPENSSL_VERSION_NUMBER >= 0x30000000L && !defined(LIBRESSL_VERSION_NUMBER)
+	BIO_set_callback_ex(conn, BIO_debug_callback_ex);
+#else
 	BIO_set_callback(conn, BIO_debug_callback);
+#endif
 
 	/* TODO: still needed? Set to NON blocking ! */
 	BIO_set_nbio( conn, 1 );
@@ -585,11 +617,15 @@ osslChkPeerFingerprint(nsd_ossl_t *pThis, X509 *pCert)
 	unsigned int n;
 	uchar *fromHostIP = NULL;
 	uchar fingerprint[20 /*EVP_MAX_MD_SIZE**/];
+	uchar fingerprintSha256[32 /*EVP_MAX_MD_SIZE**/];
 	size_t size;
+	size_t sizeSha256;
 	cstr_t *pstrFingerprint = NULL;
+	cstr_t *pstrFingerprintSha256 = NULL;
 	int bFoundPositiveMatch;
 	permittedPeers_t *pPeer;
 	const EVP_MD *fdig = EVP_sha1();
+	const EVP_MD *fdigSha256 = EVP_sha256();
 
 	ISOBJ_TYPE_assert(pThis, nsd_ossl);
 
@@ -599,17 +635,27 @@ osslChkPeerFingerprint(nsd_ossl_t *pThis, X509 *pCert)
 		dbgprintf("osslChkPeerFingerprint: error X509cert is not valid!\n");
 		ABORT_FINALIZE(RS_RET_INVALID_FINGERPRINT);
 	}
-
-	CHKiRet(GenFingerprintStr(fingerprint, size, &pstrFingerprint));
+	sizeSha256 = sizeof(fingerprintSha256);
+	if (!X509_digest(pCert,fdigSha256,fingerprintSha256,&n)) {
+		dbgprintf("osslChkPeerFingerprint: error X509cert is not valid!\n");
+		ABORT_FINALIZE(RS_RET_INVALID_FINGERPRINT);
+	}
+	CHKiRet(GenFingerprintStr(fingerprint, size, &pstrFingerprint, "SHA1"));
 	dbgprintf("osslChkPeerFingerprint: peer's certificate SHA1 fingerprint: %s\n",
 		cstrGetSzStrNoNULL(pstrFingerprint));
+	CHKiRet(GenFingerprintStr(fingerprintSha256, sizeSha256, &pstrFingerprintSha256, "SHA256"));
+	dbgprintf("osslChkPeerFingerprint: peer's certificate SHA256 fingerprint: %s\n",
+		cstrGetSzStrNoNULL(pstrFingerprintSha256));
 
 	/* now search through the permitted peers to see if we can find a permitted one */
 	bFoundPositiveMatch = 0;
 	pPeer = pThis->pPermPeers;
 	while(pPeer != NULL && !bFoundPositiveMatch) {
 		if(!rsCStrSzStrCmp(pstrFingerprint, pPeer->pszID, strlen((char*) pPeer->pszID))) {
-			dbgprintf("osslChkPeerFingerprint: peer's certificate MATCH found: %s\n", pPeer->pszID);
+			dbgprintf("osslChkPeerFingerprint: peer's certificate SHA1 MATCH found: %s\n", pPeer->pszID);
+			bFoundPositiveMatch = 1;
+		} else if(!rsCStrSzStrCmp(pstrFingerprintSha256, pPeer->pszID, strlen((char*) pPeer->pszID))) {
+			dbgprintf("osslChkPeerFingerprint: peer's certificate SHA256 MATCH found: %s\n", pPeer->pszID);
 			bFoundPositiveMatch = 1;
 		} else {
 			dbgprintf("osslChkPeerFingerprint: NOMATCH peer certificate: %s\n", pPeer->pszID);
@@ -686,7 +732,8 @@ osslChkOnePeerName(nsd_ossl_t *pThis, X509 *pCert, uchar *pszPeerID, int *pbFoun
 				*pbFoundPositiveMatch = 1;
 				break;
 			} else if ( osslRet < 0 ) {
-				osslLastSSLErrorMsg(osslRet, pThis->ssl, LOG_ERR, "osslChkOnePeerName");
+				osslLastSSLErrorMsg(osslRet, pThis->ssl, LOG_ERR, "osslChkOnePeerName",
+					"X509_check_host");
 				ABORT_FINALIZE(RS_RET_NO_ERRCODE);
 			}
 #endif
@@ -932,9 +979,8 @@ osslEndSess(nsd_ossl_t *pThis)
 					err != SSL_ERROR_WANT_READ &&
 					err != SSL_ERROR_WANT_WRITE) {
 				/* Output Warning only */
-				osslLastSSLErrorMsg(ret, pThis->ssl, LOG_WARNING, "osslEndSess");
+				osslLastSSLErrorMsg(ret, pThis->ssl, LOG_WARNING, "osslEndSess", "SSL_shutdown");
 			}
-
 			/* Shutdown not finished, call SSL_read to do a bidirectional shutdown, see doc for more:
 			*	https://www.openssl.org/docs/man1.1.1/man3/SSL_shutdown.html
 			*/
@@ -942,13 +988,17 @@ osslEndSess(nsd_ossl_t *pThis)
 			int iBytesRet = SSL_read(pThis->ssl, rcvBuf, NSD_OSSL_MAX_RCVBUF);
 			DBGPRINTF("osslEndSess: Forcing ssl shutdown SSL_read (%d) to do a bidirectional shutdown\n",
 				iBytesRet);
-			LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO, "nsd_ossl:"
-			"TLS session terminated with remote syslog server '%s': End Session", fromHostIP);
-			DBGPRINTF("osslEndSess: session closed (un)successfully \n");
+			if (ret < 0) {
+				/* Unsuccessful shutdown, log as INFO */
+				LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO, "nsd_ossl: "
+				"TLS session terminated successfully to remote syslog server '%s' with SSL Error '%d':"
+				" End Session", fromHostIP, ret);
+			}
+			dbgprintf( "osslEndSess: TLS session terminated successfully to remote syslog server '%s'"
+				" End Session", fromHostIP);
 		} else {
-			LogMsg(0, RS_RET_NO_ERRCODE, LOG_INFO, "nsd_ossl:"
-			"TLS session terminated with remote syslog server '%s': End Session", fromHostIP);
-			DBGPRINTF("osslEndSess: session closed successfully \n");
+			dbgprintf("osslEndSess: TLS session terminated successfully with remote syslog server '%s':"
+				" End Session", fromHostIP);
 		}
 
 		/* Session closed */
@@ -1224,7 +1274,7 @@ osslInit_ctx(nsd_ossl_t *const pThis)
 	int bHaveKey;
 	const char *caFile, *certFile, *keyFile;
 	/* Setup certificates */
-	caFile = (char*) ((pThis->pszCAFile == NULL) ? glbl.GetDfltNetstrmDrvrCAF() : pThis->pszCAFile);
+	caFile = (char*) ((pThis->pszCAFile == NULL) ? glbl.GetDfltNetstrmDrvrCAF(runConf) : pThis->pszCAFile);
 	if(caFile == NULL) {
 		LogMsg(0, RS_RET_CA_CERT_MISSING, LOG_WARNING,
 			"Warning: CA certificate is not set");
@@ -1232,7 +1282,8 @@ osslInit_ctx(nsd_ossl_t *const pThis)
 	} else {
 		bHaveCA	= 1;
 	}
-	certFile = (char*) ((pThis->pszCertFile == NULL) ? glbl.GetDfltNetstrmDrvrCertFile() : pThis->pszCertFile);
+	certFile = (char*) ((pThis->pszCertFile == NULL) ?
+		glbl.GetDfltNetstrmDrvrCertFile(runConf) : pThis->pszCertFile);
 	if(certFile == NULL) {
 		LogMsg(0, RS_RET_CERT_MISSING, LOG_WARNING,
 			"Warning: Certificate file is not set");
@@ -1240,7 +1291,7 @@ osslInit_ctx(nsd_ossl_t *const pThis)
 	} else {
 		bHaveCert = 1;
 	}
-	keyFile = (char*) ((pThis->pszKeyFile == NULL) ? glbl.GetDfltNetstrmDrvrKeyFile() : pThis->pszKeyFile);
+	keyFile = (char*) ((pThis->pszKeyFile == NULL) ? glbl.GetDfltNetstrmDrvrKeyFile(runConf) : pThis->pszKeyFile);
 	if(keyFile == NULL) {
 		LogMsg(0, RS_RET_CERTKEY_MISSING, LOG_WARNING,
 			"Warning: Key file is not set");
@@ -1256,7 +1307,7 @@ osslInit_ctx(nsd_ossl_t *const pThis)
 				"Check at least: 1) file path is correct, 2) file exist, "
 				"3) permissions are correct, 4) file content is correct. "
 				"Open ssl error info may follow in next messages");
-		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
+		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit", "SSL_CTX_load_verify_locations");
 		ABORT_FINALIZE(RS_RET_TLS_CERT_ERR);
 	}
 	if(bHaveCert == 1 && SSL_CTX_use_certificate_chain_file(pThis->ctx, certFile) != 1) {
@@ -1264,7 +1315,7 @@ osslInit_ctx(nsd_ossl_t *const pThis)
 				"Check at least: 1) file path is correct, 2) file exist, "
 				"3) permissions are correct, 4) file content is correct. "
 				"Open ssl error info may follow in next messages");
-		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
+		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit", "SSL_CTX_use_certificate_chain_file");
 		ABORT_FINALIZE(RS_RET_TLS_CERT_ERR);
 	}
 	if(bHaveKey == 1 && SSL_CTX_use_PrivateKey_file(pThis->ctx, keyFile, SSL_FILETYPE_PEM) != 1) {
@@ -1272,7 +1323,7 @@ osslInit_ctx(nsd_ossl_t *const pThis)
 				"Check at least: 1) file path is correct, 2) file exist, "
 				"3) permissions are correct, 4) file content is correct. "
 				"Open ssl error info may follow in next messages");
-		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit");
+		osslLastSSLErrorMsg(0, NULL, LOG_ERR, "osslGlblInit", "SSL_CTX_use_PrivateKey_file");
 		ABORT_FINALIZE(RS_RET_TLS_KEY_ERR);
 	}
 
@@ -1420,13 +1471,16 @@ osslPostHandshakeCheck(nsd_ossl_t *pNsd)
 		"Information, no shared curve between syslog client and server");
 	}
 	#endif
+	dbgprintf("osslPostHandshakeCheck: Debug Protocol Version: %s\n",
+		SSL_get_version(pNsd->ssl));
+
 	sslCipher = (const SSL_CIPHER*) SSL_get_current_cipher(pNsd->ssl);
 	if (sslCipher != NULL){
 		if(SSL_CIPHER_get_version(sslCipher) == NULL) {
 			LogError(0, RS_RET_NO_ERRCODE, "nsd_ossl:"
 		"TLS version mismatch between syslog client and server.");
 		}
-		dbgprintf("osslPostHandshakeCheck: Debug Version: %s Name: %s\n",
+		dbgprintf("osslPostHandshakeCheck: Debug Cipher Version: %s Name: %s\n",
 			SSL_CIPHER_get_version(sslCipher), SSL_CIPHER_get_name(sslCipher));
 	}else {
 		LogError(0, RS_RET_NO_ERRCODE, "nsd_ossl:No shared ciphers between syslog client and server.");
@@ -1465,13 +1519,15 @@ osslHandshakeCheck(nsd_ossl_t *pNsd)
 			} else if(resErr == SSL_ERROR_SYSCALL) {
 				dbgprintf("osslHandshakeCheck: OpenSSL Server handshake failed with SSL_ERROR_SYSCALL "
 					"- Aborting handshake.\n");
-				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_WARNING, "osslHandshakeCheck Server");
+				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_WARNING, "osslHandshakeCheck Server",
+					"SSL_accept");
 				LogMsg(0, RS_RET_NO_ERRCODE, LOG_WARNING,
 					"nsd_ossl:TLS session terminated with remote client '%s': "
 					"Handshake failed with SSL_ERROR_SYSCALL", fromHostIP);
 				ABORT_FINALIZE(RS_RET_NO_ERRCODE);
 			} else {
-				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_ERR, "osslHandshakeCheck Server");
+				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_ERR, "osslHandshakeCheck Server",
+					"SSL_accept");
 				LogMsg(0, RS_RET_NO_ERRCODE, LOG_WARNING,
 					"nsd_ossl:TLS session terminated with remote client '%s': "
 					"Handshake failed with error code: %d", fromHostIP, resErr);
@@ -1494,10 +1550,12 @@ osslHandshakeCheck(nsd_ossl_t *pNsd)
 			} else if(resErr == SSL_ERROR_SYSCALL) {
 				dbgprintf("osslHandshakeCheck: OpenSSL Client handshake failed with SSL_ERROR_SYSCALL "
 					"- Aborting handshake.\n");
-				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_WARNING, "osslHandshakeCheck Client");
+				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_WARNING, "osslHandshakeCheck Client",
+					"SSL_do_handshake");
 				ABORT_FINALIZE(RS_RET_NO_ERRCODE /*RS_RET_RETRY*/);
 			} else {
-				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_ERR, "osslHandshakeCheck Client");
+				osslLastSSLErrorMsg(res, pNsd->ssl, LOG_ERR, "osslHandshakeCheck Client",
+					"SSL_do_handshake");
 				LogMsg(0, RS_RET_NO_ERRCODE, LOG_WARNING,
 					"nsd_ossl:TLS session terminated with remote syslog server '%s':"
 					"Handshake failed with error code: %d", fromHostIP, resErr);
@@ -1516,7 +1574,7 @@ finalize_it:
 		free(fromHostIP);
 	}
 	if(iRet == RS_RET_OK) {
-		/* If no error occured, set socket to SSL mode */
+		/* If no error occurred, set socket to SSL mode */
 		pNsd->iMode = 1;
 	}
 
@@ -1727,10 +1785,24 @@ Send(nsd_t *pNsd, uchar *pBuf, ssize_t *pLenBuf)
 				DBGPRINTF("Send: SSL_ERROR_ZERO_RETURN received, retry next time\n");
 				ABORT_FINALIZE(RS_RET_RETRY);
 			}
+			else if(err == SSL_ERROR_SYSCALL) {
+				/* Output error and abort */
+				osslLastSSLErrorMsg(iSent, pThis->ssl, LOG_INFO, "Send", "SSL_write");
+				iRet = RS_RET_NO_ERRCODE;
+				/* Check for underlaying socket errors **/
+				if (	errno == ECONNRESET) {
+					dbgprintf("Send: SSL_ERROR_SYSCALL Connection was reset by remote\n");
+					/* Connection was dropped from remote site */
+					iRet = RS_RET_CLOSED;
+				} else {
+					DBGPRINTF("Send: SSL_ERROR_SYSCALLErrno %d\n", errno);
+				}
+				ABORT_FINALIZE(iRet);
+			}
 			else if(err != SSL_ERROR_WANT_READ &&
 				err != SSL_ERROR_WANT_WRITE) {
 				/* Output error and abort */
-				osslLastSSLErrorMsg(iSent, pThis->ssl, LOG_ERR, "Send");
+				osslLastSSLErrorMsg(iSent, pThis->ssl, LOG_ERR, "Send", "SSL_write");
 				ABORT_FINALIZE(RS_RET_NO_ERRCODE);
 			} else {
 				/* Check for SSL Shutdown */
@@ -1889,6 +1961,7 @@ applyGnutlsPriorityString(nsd_ossl_t *const pThis)
 					pszCmd = strndup(pCurrentPos, pNextPos-pCurrentPos);
 					pCurrentPos = pNextPos+1;
 					pNextPos = index(pCurrentPos, '\n');
+					pNextPos = (pNextPos == NULL ? index(pCurrentPos, ';') : pNextPos);
 					pszValue = (pNextPos == NULL ?
 							strdup(pCurrentPos) :
 							strndup(pCurrentPos, pNextPos - pCurrentPos));
@@ -1922,7 +1995,7 @@ applyGnutlsPriorityString(nsd_ossl_t *const pThis)
 				LogError(0, RS_RET_SYS_ERR, "Error: setting openssl command parameters: %s"
 						"Open ssl error info may follow in next messages",
 						pThis->gnutlsPriorityString);
-				osslLastSSLErrorMsg(0, NULL, LOG_ERR, "SetGnutlsPriorityString");
+				osslLastSSLErrorMsg(0, NULL, LOG_ERR, "SetGnutlsPriorityString", "SSL_CONF_CTX_finish");
 			}
 			SSL_CONF_CTX_free(cctx);
 		}

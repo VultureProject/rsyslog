@@ -42,6 +42,8 @@
 #include "srUtils.h"
 #include "stringbuf.h"
 #include "errmsg.h"
+#include "rsconf.h"
+#include "timezones.h"
 
 /* static data */
 DEFobjStaticHelpers
@@ -85,6 +87,21 @@ static const long long yearInSecs[] = {
 	3786911999, 3818447999, 3849983999, 3881606399, 3913142399,
 	3944678399, 3976214399, 4007836799, 4039372799, 4070908799,
 	4102444799};
+
+/* note ramge is 1969 -> 2100 because it needs to access previous/next year */
+/* for x in $(seq 1969 2100) ; do
+ *   printf %s', ' $(date --date="Dec 28 ${x} UTC 12:00:00" +%V)
+ * done | fold -w 70 -s */
+static const int weeksInYear[] = {
+	52, 53, 52, 52, 52, 52, 52, 53, 52, 52, 52, 52, 53, 52, 52, 52, 52,
+	52, 53, 52, 52, 52, 52, 53, 52, 52, 52, 52, 52, 53, 52, 52, 52, 52,
+	52, 53, 52, 52, 52, 52, 53, 52, 52, 52, 52, 52, 53, 52, 52, 52, 52,
+	53, 52, 52, 52, 52, 52, 53, 52, 52, 52, 52, 52, 53, 52, 52, 52, 52,
+	53, 52, 52, 52, 52, 52, 53, 52, 52, 52, 52, 53, 52, 52, 52, 52, 52,
+	53, 52, 52, 52, 52, 52, 53, 52, 52, 52, 52, 53, 52, 52, 52, 52, 52,
+	53, 52, 52, 52, 52, 53, 52, 52, 52, 52, 52, 53, 52, 52, 52, 52, 52,
+	53, 52, 52, 52, 52, 53, 52, 52, 52, 52, 52, 53, 52,
+};
 
 static const char* monthNames[12] = {
 	"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
@@ -438,7 +455,7 @@ finalize_it:
  * only partial information and only that partial information is updated.
  * So the "output timestamp" is a valid timestamp only if the "input
  * timestamp" was valid, too. The is actually an optimization, as it
- * permits us to use a pre-aquired timestamp and thus avoids to do
+ * permits us to use a pre-acquired timestamp and thus avoids to do
  * a (costly) time() call. Thanks to David Lang for insisting on
  * time() call reduction ;).
  * This method now also checks the maximum string length it is passed.
@@ -731,7 +748,7 @@ ParseTIMESTAMP3164(struct syslogTime *pTime, uchar** ppszTS, int *pLenStr,
 			/* found TZ, apply it */
 			tzinfo_t* tzinfo;
 			tzstring[i] = '\0';
-			if((tzinfo = glblFindTimezoneInfo((char*) tzstring)) == NULL) {
+			if((tzinfo = glblFindTimezone(runConf, (char*) tzstring)) == NULL) {
 				DBGPRINTF("ParseTIMESTAMP3164: invalid TZ string '%s' -- ignored\n",
 					  tzstring);
 			} else {
@@ -819,7 +836,7 @@ applyDfltTZ(struct syslogTime *pTime, char *tz)
  * The caller must provide the timestamp as well as a character
  * buffer that will receive the resulting string. The function
  * returns the size of the timestamp written in bytes (without
- * the string terminator). If 0 is returend, an error occured.
+ * the string terminator). If 0 is returend, an error occurred.
  */
 static int
 formatTimestampToMySQL(struct syslogTime *ts, char* pBuf)
@@ -888,7 +905,7 @@ formatTimestampToPgSQL(struct syslogTime *ts, char *pBuf)
  * The caller must provide the timestamp as well as a character
  * buffer that will receive the resulting string. The function
  * returns the size of the timestamp written in bytes (without
- * the string terminator). If 0 is returend, an error occured.
+ * the string terminator). If 0 is returend, an error occurred.
  * The buffer must be at least 7 bytes large.
  * rgerhards, 2008-06-06
  */
@@ -929,7 +946,7 @@ formatTimestampSecFrac(struct syslogTime *ts, char* pBuf)
  * The caller must provide the timestamp as well as a character
  * buffer that will receive the resulting string. The function
  * returns the size of the timestamp written in bytes (without
- * the string terminator). If 0 is returend, an error occured.
+ * the string terminator). If 0 is returend, an error occurred.
  */
 static int
 formatTimestamp3339(struct syslogTime *ts, char* pBuf)
@@ -1004,7 +1021,7 @@ formatTimestamp3339(struct syslogTime *ts, char* pBuf)
  * The caller must provide the timestamp as well as a character
  * buffer that will receive the resulting string. The function
  * returns the size of the timestamp written in bytes (without
- * the string termnator). If 0 is returend, an error occured.
+ * the string termnator). If 0 is returend, an error occurred.
  * rgerhards, 2010-03-05: Added support to for buggy 3164 dates,
  * where a zero-digit is written instead of a space for the first
  * day character if day < 10. syslog-ng seems to do that, and some
@@ -1016,7 +1033,7 @@ formatTimestamp3164(struct syslogTime *ts, char* pBuf, int bBuggyDay)
 	int iDay;
 	assert(ts != NULL);
 	assert(pBuf != NULL);
-	
+
 	pBuf[0] = monthNames[(ts->month - 1)% 12][0];
 	pBuf[1] = monthNames[(ts->month - 1) % 12][1];
 	pBuf[2] = monthNames[(ts->month - 1) % 12][2];
@@ -1262,6 +1279,40 @@ int getWeek(struct syslogTime *ts)
 	if (curDow < jan1Dow) {
 		++weekNum;
 	}
+	return weekNum;
+}
+
+/* getISOWeek - 1-53 week of the year */
+int getISOWeek(struct syslogTime *ts, int *year)
+{
+	int weekNum;
+	int curDow;
+	int curYearDay;
+
+	/* get current day in year, current day of week
+	 * and the day of week of 1/1 */
+	curYearDay = getOrdinal(ts);
+	curDow = getWeekdayNbr(ts);
+
+	/* map from 0 - Sunday, 1, Monday to 1, Monday, 7 - Sunday */
+	if (curDow == 0) {
+		curDow = 7;
+	}
+	/* make ordinal in range 1-366 */
+	curYearDay++;
+
+	weekNum = (10 + curYearDay - curDow) / 7;
+	*year = ts->year;
+	if (weekNum == 0) {
+		/* this is actually W52 or W53 of previous year */
+		weekNum = weeksInYear[ts->year - 1 - 1969];
+		*year = ts->year - 1;
+	} else if (weekNum > weeksInYear[ts->year - 1969]) {
+		/* this is actually W01 of next year */
+		weekNum = 1;
+		*year = ts->year + 1;
+	}
+
 	return weekNum;
 }
 

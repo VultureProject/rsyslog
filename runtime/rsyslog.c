@@ -126,7 +126,7 @@ rsrtSetErrLogger(void (*errLogger)(const int, const int, const uchar*))
  * NOTE: this is NOT thread safe and must not be called concurrently. If that
  * ever poses a problem, we may use proper mutex calls - not considered needed yet.
  * If ppErrObj is provided, it receives a char pointer to the name of the object that
- * caused the problem (if one occured). The caller must never free this pointer. If
+ * caused the problem (if one occurred). The caller must never free this pointer. If
  * ppErrObj is NULL, no such information will be provided. pObjIF is the pointer to
  * the "obj" object interface, which may be used to query any other rsyslog objects.
  * rgerhards, 2008-04-16
@@ -143,7 +143,6 @@ rsrtInit(const char **ppErrObj, obj_if_t *pObjIF)
 		/* init runtime only if not yet done */
 #ifdef ENABLE_LIBLOGGING_STDLOG
 		stdlog_init(0);
-		stdlog_hdl = stdlog_open("rsyslogd", 0, STDLOG_SYSLOG, NULL);
 #endif
 		ret = pthread_attr_init(&default_thread_attr);
 		if(ret != 0) {

@@ -692,46 +692,80 @@ done:
 }
 
 static void handle_ksi_config(rsksictx ctx, KSI_AsyncService *as, KSI_Config *config) {
-	KSI_Integer *ksi_int = NULL;
-	uint64_t tmpInt, newLevel, res;
+	int res = KSI_UNKNOWN_ERROR;
+	KSI_Integer *intValue = NULL;
 
-	if (KSI_Config_getMaxRequests(config, &ksi_int) == KSI_OK && ksi_int != NULL) {
-		tmpInt = KSI_Integer_getUInt64(ksi_int);
-		ctx->max_requests=tmpInt;
+	if (KSI_Config_getMaxRequests(config, &intValue) == KSI_OK && intValue != NULL) {
+		ctx->max_requests = KSI_Integer_getUInt64(intValue);
 		report(ctx, "KSI gateway has reported a max requests value of %llu",
-			(long long unsigned) tmpInt);
+			(long long unsigned) ctx->max_requests);
 
 		if(as) {
+			/* libksi expects size_t. */
+			size_t optValue = 0;
+
+			optValue = ctx->max_requests;
 			res = KSI_AsyncService_setOption(as, KSI_ASYNC_OPT_MAX_REQUEST_COUNT,
-				(void*) (ctx->max_requests));
+				(void*)optValue);
 			if(res != KSI_OK)
 				reportKSIAPIErr(ctx, NULL, "KSI_AsyncService_setOption(max_request)", res);
 
+			optValue = 3 * ctx->max_requests * ctx->blockSigTimeout;
 			KSI_AsyncService_setOption(as, KSI_ASYNC_OPT_REQUEST_CACHE_SIZE,
-				(void*) (5*ctx->max_requests));
+				(void*)optValue);
 		}
 	}
 
-	ksi_int = NULL;
-	if(KSI_Config_getMaxLevel(config, &ksi_int) == KSI_OK && ksi_int != NULL) {
-		tmpInt = KSI_Integer_getUInt64(ksi_int);
+	intValue = NULL;
+	if(KSI_Config_getMaxLevel(config, &intValue) == KSI_OK && intValue != NULL) {
+		uint64_t newLevel = 0;
+		newLevel = KSI_Integer_getUInt64(intValue);
 		report(ctx, "KSI gateway has reported a max level value of %llu",
-			(long long unsigned) tmpInt);
-		newLevel=MIN(tmpInt, ctx->blockLevelLimit);
+			(long long unsigned) newLevel);
+		newLevel=MIN(newLevel, ctx->blockLevelLimit);
 		if(ctx->effectiveBlockLevelLimit != newLevel) {
 			report(ctx, "Changing the configured block level limit from %llu to %llu",
 			(long long unsigned) ctx->effectiveBlockLevelLimit,
 			(long long unsigned) newLevel);
 			ctx->effectiveBlockLevelLimit = newLevel;
 		}
-		else if(tmpInt < 2) {
+		else if(newLevel < 2) {
 			report(ctx, "KSI gateway has reported an invalid level limit value (%llu), "
-				"plugin disabled", (long long unsigned) tmpInt);
+				"plugin disabled", (long long unsigned) newLevel);
 			ctx->disabled = true;
+		}
+	}
+
+	intValue = NULL;
+	if (KSI_Config_getAggrPeriod(config, &intValue) == KSI_OK && intValue != NULL) {
+		uint64_t newThreadSleep = 0;
+		newThreadSleep = KSI_Integer_getUInt64(intValue);
+		report(ctx, "KSI gateway has reported an aggregation period value of %llu",
+			(long long unsigned) newThreadSleep);
+
+		newThreadSleep = MIN(newThreadSleep, ctx->threadSleepms);
+		if(ctx->threadSleepms != newThreadSleep) {
+			report(ctx, "Changing async signer thread sleep from %llu to %llu",
+			(long long unsigned) ctx->threadSleepms,
+			(long long unsigned) newThreadSleep);
+			ctx->threadSleepms = newThreadSleep;
 		}
 	}
 }
 
+static int
+isAggrConfNeeded(rsksictx ctx) {
+	time_t now = 0;
+
+	now = time(NULL);
+
+	if ((uint64_t)ctx->tConfRequested + ctx->confInterval <= (uint64_t)now || ctx->tConfRequested == 0) {
+		ctx->tConfRequested = now;
+		return 1;
+	}
+
+	return 0;
+}
 
 /* note: if file exists, the last hash for chaining must
  * be read from file.
@@ -741,7 +775,6 @@ ksiOpenSigFile(ksifile ksi) {
 	int r = 0, tmpRes = 0;
 	const char *header;
 	FILE* signatureFile = NULL;
-	KSI_Config *config = NULL;
 
 	if (ksi->ctx->syncMode == LOGSIG_ASYNCHRONOUS)
 		header = LS12_BLOCKFILE_HEADER;
@@ -777,14 +810,17 @@ ksiOpenSigFile(ksifile ksi) {
 	ksiReadStateFile(ksi);
 
 	if (ksi->ctx->syncMode == LOGSIG_SYNCHRONOUS) {
-		tmpRes = KSI_receiveAggregatorConfig(ksi->ctx->ksi_ctx, &config);
-		if(tmpRes == KSI_OK) {
-			handle_ksi_config(ksi->ctx, NULL, config);
+		if (isAggrConfNeeded(ksi->ctx)) {
+			KSI_Config *config = NULL;
+
+			tmpRes = KSI_receiveAggregatorConfig(ksi->ctx->ksi_ctx, &config);
+			if (tmpRes == KSI_OK) {
+				handle_ksi_config(ksi->ctx, NULL, config);
+			} else {
+				reportKSIAPIErr(ksi->ctx, NULL, "KSI_receiveAggregatorConfig", tmpRes);
+			}
+			KSI_Config_free(config);
 		}
-		else {
-			reportKSIAPIErr(ksi->ctx, NULL, "KSI_receiveAggregatorConfig", tmpRes);
-		}
-		KSI_Config_free(config);
 	}
 
 done:	return r;
@@ -821,14 +857,15 @@ seedIVKSI(ksifile ksi)
 
 static int
 create_signer_thread(rsksictx ctx) {
+	int r;
 	if (ctx->signer_state != SIGNER_STARTED) {
-		if (pthread_mutex_init(&ctx->module_lock, 0))
-			report(ctx, "pthread_mutex_init: %s", strerror(errno));
+		if ((r = pthread_mutex_init(&ctx->module_lock, 0)))
+			report(ctx, "pthread_mutex_init: %s", strerror(r));
 		ctx->signer_queue = ProtectedQueue_new(10);
 
 		ctx->signer_state = SIGNER_INIT;
-		if (pthread_create(&ctx->signer_thread, NULL, signer_thread, ctx)) {
-			report(ctx, "pthread_mutex_init: %s", strerror(errno));
+		if ((r = pthread_create(&ctx->signer_thread, NULL, signer_thread, ctx))) {
+			report(ctx, "pthread_create: %s", strerror(r));
 			ctx->signer_state = SIGNER_IDLE;
 			return RSGTE_INTERNAL;
 		}
@@ -855,6 +892,10 @@ rsksiCtxNew(void) {
 	ctx->bKeepTreeHashes = false;
 	ctx->bKeepRecordHashes = true;
 	ctx->max_requests = (1 << 8);
+	ctx->blockSigTimeout = 10;
+	ctx->confInterval = 3600;
+	ctx->tConfRequested = 0;
+	ctx->threadSleepms = 1000;
 	ctx->errFunc = NULL;
 	ctx->usrptr = NULL;
 	ctx->fileUID = -1;
@@ -1935,22 +1976,20 @@ cleanup:
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wint-to-pointer-cast"
 void *signer_thread(void *arg) {
-
+	int res = KSI_UNKNOWN_ERROR;
 	rsksictx ctx = (rsksictx) arg;
-	QueueItem *item = NULL;
-	size_t ksiFileCount = 0;
-	time_t timeout;
-	KSI_CTX *ksi_ctx;
+	KSI_CTX *ksi_ctx = NULL;
 	KSI_AsyncService *as = NULL;
-	int res = 0;
-	bool ret = false;
-	int i = 0, endpoints = 0;
+	size_t size_t_value = 0;
+	size_t ksiFileCount = 0;
+	int endpoints = 0;
+	bool bSleep = true;
+
 
 	CHECK_KSI_API(KSI_CTX_new(&ksi_ctx), ctx, "KSI_CTX_new");
 	CHECK_KSI_API(KSI_CTX_setAggregator(ksi_ctx,
 		ctx->aggregatorUri, ctx->aggregatorId, ctx->aggregatorKey),
 		ctx, "KSI_CTX_setAggregator");
-
 
 	if(ctx->debugFile) {
 		res = KSI_CTX_setLoggerCallback(ksi_ctx, rsksiStreamLogger, ctx->debugFile);
@@ -1969,6 +2008,7 @@ void *signer_thread(void *arg) {
 		reportKSIAPIErr(ctx, NULL, "KSI_SigningAsyncService_new", res);
 	}
 	else {
+		int i = 0;
 		for (i = 0; i < ctx->aggregatorEndpointCount; i++) {
 			res = KSI_AsyncService_addEndpoint(as,
 					ctx->aggregatorEndpoints[i], ctx->aggregatorId, ctx->aggregatorKey);
@@ -1990,16 +2030,30 @@ void *signer_thread(void *arg) {
 		goto cleanup;
 	}
 
+	/* Lets use buffer value, as libksi requires size_t. */
+	size_t_value = ctx->max_requests;
 	KSI_AsyncService_setOption(as, KSI_ASYNC_OPT_REQUEST_CACHE_SIZE,
-		(void*) (ctx->max_requests));
+		(void*)size_t_value);
+	size_t_value = ctx->blockSigTimeout;
+	KSI_AsyncService_setOption(as, KSI_ASYNC_OPT_SND_TIMEOUT,
+		(void*)size_t_value);
+
 
 	ctx->signer_state = SIGNER_STARTED;
 	while (true) {
-		timeout = 1;
+		QueueItem *item = NULL;
+
+		if (isAggrConfNeeded(ctx)) {
+			request_async_config(ctx, ksi_ctx, as);
+		}
 
 		/* Wait for a work item or timeout*/
-		ProtectedQueue_waitForItem(ctx->signer_queue, NULL, timeout * 1000);
-		/* Check for block time limit*/
+		if (bSleep) {
+			ProtectedQueue_waitForItem(ctx->signer_queue, NULL, ctx->threadSleepms);
+		}
+		bSleep = true;
+
+		/* Check for block time limit. */
 		sigblkCheckTimeOut(ctx);
 
 		/* in case there are no items go around*/
@@ -2011,8 +2065,7 @@ void *signer_thread(void *arg) {
 		/* process signing requests only if there is an open signature file */
 		if(ksiFileCount > 0) {
 			/* check for pending/unsent requests in asynchronous service */
-			ret = process_requests_async(ctx, ksi_ctx, as);
-			if(!ret) {
+			if(!process_requests_async(ctx, ksi_ctx, as)) {
 				// probably fatal error, disable signing, error should be already reported
 				ctx->disabled = true;
 				goto cleanup;
@@ -2025,6 +2078,11 @@ void *signer_thread(void *arg) {
 
 		/* Handle other types of work items */
 		if (ProtectedQueue_popFront(ctx->signer_queue, (void**) &item) != 0) {
+			/* There is no point to sleep after processing non request type item
+			 * as there is great possibility that next item can already be
+			 * processed. */
+			bSleep = false;
+
 			if (item->type == QITEM_CLOSE_FILE) {
 				if (item->file) {
 					fclose(item->file);
@@ -2034,8 +2092,6 @@ void *signer_thread(void *arg) {
 				if (ksiFileCount > 0) ksiFileCount--;
 			} else if (item->type == QITEM_NEW_FILE) {
 				ksiFileCount++;
-				request_async_config(ctx, ksi_ctx, as);
-				/* renew the config when opening a new file */
 			} else if (item->type == QITEM_QUIT) {
 				free(item);
 
@@ -2050,6 +2106,7 @@ void *signer_thread(void *arg) {
 
 				goto cleanup;
 			}
+
 			free(item);
 		}
 	}

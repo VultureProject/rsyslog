@@ -68,6 +68,7 @@ export TB_ERR_TIMEOUT=101
 export ZOOPIDFILE="$(pwd)/zookeeper.pid"
 
 #valgrind="valgrind --malloc-fill=ff --free-fill=fe --log-fd=1"
+#valgrind="valgrind --tool=callgrind" # for kcachegrind profiling
 
 # **** use the line below for very hard to find leaks! *****
 #valgrind="valgrind --leak-check=full --show-leak-kinds=all --malloc-fill=ff --free-fill=fe --log-fd=1"
@@ -302,7 +303,7 @@ wait_startup_pid() {
 		if [ $(date +%s) -gt $(( TB_STARTTEST + TB_TEST_MAX_RUNTIME )) ]; then
 		   printf '%s ABORT! Timeout waiting on startup (pid file %s)\n' "$(tb_timestamp)" "$1"
 		   ls -l "$1"
-		   ps -fp $(cat "$1")
+		   ps -fp $($SUDO cat "$1")
 		   error_exit 1
 		fi
 	done
@@ -767,7 +768,7 @@ content_check_with_count() {
 			count=$(grep -c -F -- "$1" <${RSYSLOG_OUT_LOG})
 		fi
 		if [ ${count:=0} -eq $2 ]; then
-			echo content_check_with_count SUCCESS, \"$1\" occured $2 times
+			echo content_check_with_count SUCCESS, \"$1\" occurred $2 times
 			break
 		else
 			if [ "$timecounter" == "$timeoutend" ]; then
@@ -1396,6 +1397,9 @@ seq_check() {
 	fi
 	if [ "${SEQ_CHECK_FILE##*.}" == "gz" ]; then
 		gunzip -c "${SEQ_CHECK_FILE}" | $RS_SORTCMD $RS_SORT_NUMERIC_OPT | ./chkseq -s$startnum -e$endnum $3 $4 $5 $6 $7 $SEQ_CHECK_OPTIONS
+	elif [ "${SEQ_CHECK_FILE##*.}" == "zst" ]; then
+		ls -l "${SEQ_CHECK_FILE}"
+		unzstd < "${SEQ_CHECK_FILE}" | $RS_SORTCMD $RS_SORT_NUMERIC_OPT | ./chkseq -s$startnum -e$endnum $3 $4 $5 $6 $7 $SEQ_CHECK_OPTIONS
 	else
 		$RS_SORTCMD $RS_SORT_NUMERIC_OPT < "${SEQ_CHECK_FILE}" | ./chkseq -s$startnum -e$endnum $3 $4 $5 $6 $7 $SEQ_CHECK_OPTIONS
 	fi
@@ -1406,6 +1410,10 @@ seq_check() {
 	if [ $ret -ne 0 ]; then
 		if [ "${SEQ_CHECK_FILE##*.}" == "gz" ]; then
 			gunzip -c "${SEQ_CHECK_FILE}" | $RS_SORTCMD $RS_SORT_NUMERIC_OPT \
+				| ./chkseq -s$startnum -e$endnum $3 $4 $5 $6 $7 $SEQ_CHECK_OPTIONS \
+				> $RSYSLOG_DYNNAME.error.log
+		elif [ "${SEQ_CHECK_FILE##*.}" == "zst" ]; then
+			unzstd < "${SEQ_CHECK_FILE}" | $RS_SORTCMD $RS_SORT_NUMERIC_OPT \
 				| ./chkseq -s$startnum -e$endnum $3 $4 $5 $6 $7 $SEQ_CHECK_OPTIONS \
 				> $RSYSLOG_DYNNAME.error.log
 		else
@@ -1631,7 +1639,7 @@ dep_kafka_url="https://www.rsyslog.com/files/download/rsyslog/$RS_KAFKA_DOWNLOAD
 dep_kafka_cached_file=$dep_cache_dir/$RS_KAFKA_DOWNLOAD
 
 if [ -z "$ES_DOWNLOAD" ]; then
-	export ES_DOWNLOAD=elasticsearch-7.14.1-linux-x86_64.tar.gz #elasticsearch-5.6.9.tar.gz
+	export ES_DOWNLOAD=elasticsearch-7.14.1-linux-x86_64.tar.gz
 fi
 if [ -z "$ES_PORT" ]; then
 	export ES_PORT=19200
@@ -2137,9 +2145,16 @@ prepare_elasticsearch() {
 	if [ -n "${ES_PORT:-}" ] ; then
 		rm -f $dep_work_dir/es/config/elasticsearch.yml
 		sed "s/^http.port:.*\$/http.port: ${ES_PORT}/" $srcdir/testsuites/$dep_work_es_config > $dep_work_dir/es/config/elasticsearch.yml
+		if [ "$ES_DOWNLOAD" != "elasticsearch-6.0.0.tar.gz" ]; then
+			printf 'xpack.security.enabled: false\n' >> $dep_work_dir/es/config/elasticsearch.yml
+		fi
 	else
 		cp -f $srcdir/testsuites/$dep_work_es_config $dep_work_dir/es/config/elasticsearch.yml
 	fi
+
+	# Avoid deprecated parameter, new option introduced with 6.7
+	echo "Setting transport tcp option to ${ES_PORT_OPTION:-transport.tcp.port}"
+	sed -i "s/transport.tcp.port/${ES_PORT_OPTION:-transport.tcp.port}/g" "$dep_work_dir/es/config/elasticsearch.yml"
 
 	if [ ! -d $dep_work_dir/es/data ]; then
 			echo "Creating elastic search directories"
@@ -2178,8 +2193,8 @@ ensure_elasticsearch_ready() {
 
 # $2, if set, is the number of additional ES instances
 start_elasticsearch() {
-	# Heap Size (limit to 128MB for testbench! defaults is way to HIGH)
-	export ES_JAVA_OPTS="-Xms128m -Xmx128m"
+	# Heap Size (limit to 256MB for testbench! defaults is way to HIGH)
+	export ES_JAVA_OPTS="-Xms256m -Xmx256m"
 
 	dep_work_dir=$(readlink -f .dep_wrk)
 	dep_work_es_config="es.yml"
@@ -2193,7 +2208,7 @@ start_elasticsearch() {
 	printf 'elasticsearch pid is %s\n' "$(cat $dep_work_es_pidfile)"
 
 	# Wait for startup with hardcoded timeout
-	timeoutend=60
+	timeoutend=120
 	timeseconds=0
 	# Loop until elasticsearch port is reachable or until
 	# timeout is reached!
@@ -2204,6 +2219,16 @@ start_elasticsearch() {
 
 		if [ "$timeseconds" -gt "$timeoutend" ]; then 
 			echo "--- TIMEOUT ( $timeseconds ) reached!!!"
+			if [ ! -d $dep_work_dir/es ]; then
+				echo "ElasticSearch $dep_work_dir/es does not exist, no ElasticSearch debuglog"
+			else
+				echo "Dumping rsyslog-testbench.log from ElasticSearch instance $1"
+				echo "========================================="
+				cat $dep_work_dir/es/logs/rsyslog-testbench.log
+				echo "========================================="
+#				printf 'non-info is:\n'
+#				grep --invert-match '^\[.* INFO ' $dep_work_dir/kafka/logs/server.log | grep '^\['
+			fi
 			error_exit 1
 		fi
 	done
@@ -2512,6 +2537,17 @@ wait_for_stats_flush() {
 	echo "stats push registered"
 }
 
+# Check file exists and is of a particular size
+# $1 - file to check
+# $2 - size to check
+file_size_check() {
+    local size=$(ls -l $1 | awk {'print $5'})
+    if [ "${size}" != "${2}" ]; then
+	printf 'File:[%s] has unexpected size. Expected:[%d], Size:[%d]\n', $1 $2 $size
+        error_exit 1
+    fi
+    return 0
+}
 
 case $1 in
    'init')	$srcdir/killrsyslog.sh # kill rsyslogd if it runs for some reason

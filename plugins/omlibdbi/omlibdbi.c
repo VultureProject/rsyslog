@@ -89,7 +89,7 @@ typedef struct configSettings_s {
 	uchar *dbName;		/* database to use */
 } configSettings_t;
 static configSettings_t cs;
-uchar	*pszFileDfltTplName; /* name of the default template to use */
+static uchar *pszFileDfltTplName; /* name of the default template to use */
 
 struct modConfData_s {
 	rsconf_t *pConf;	/* our overall config object */
@@ -225,7 +225,7 @@ reportDBError(instanceData *pData, int bSilent)
 	/* output log message */
 	errno = 0;
 	if(pData->conn == NULL) {
-		LogError(0, NO_ERRCODE, "unknown DB error occured - could not obtain connection handle");
+		LogError(0, NO_ERRCODE, "unknown DB error occurred - could not obtain connection handle");
 	} else { /* we can ask dbi for the error description... */
 		uDBErrno = dbi_conn_error(pData->conn, &pszDbiErr);
 		snprintf(errMsg, sizeof(errMsg), "db error (%d): %s\n", uDBErrno, pszDbiErr);
@@ -290,15 +290,9 @@ static rsRetVal initConn(instanceData *pData, int bSilent)
 		int is_sqlite2 = !strcmp((const char *)pData->drvrName, "sqlite");
 		int is_sqlite3 = !strcmp((const char *)pData->drvrName, "sqlite3");
 		if(is_sqlite2 || is_sqlite3) {
-			char *const dn_org = strdup((char*)pData->dbName);
-			char *const dn = dirname(dn_org);
-			dbi_conn_set_option(pData->conn, is_sqlite3 ? "sqlite3_dbdir" : "sqlite_dbdir",dn);
-			free(dn_org); /* Free original buffer - dirname may return different pointer */
-
-			char *tmp = strdup((char*)pData->dbName);
-			char *bn = basename(tmp);
-			free(tmp);
-			dbi_conn_set_option(pData->conn, "dbname", bn);
+			dbi_conn_set_option(pData->conn, is_sqlite3 ? "sqlite3_dbdir" : "sqlite_dbdir",
+							dirname((char *)pData->dbName));
+			dbi_conn_set_option(pData->conn, "dbname", basename((char *)pData->dbName ));
 		} else {
 			dbi_conn_set_option(pData->conn, "dbname",   (char*) pData->dbName);
 		}
@@ -336,7 +330,7 @@ writeDB(const uchar *psz, instanceData *const __restrict__ pData)
 
 	/* try insert */
 	if((dbiRes = dbi_conn_query(pData->conn, (const char*)psz)) == NULL) {
-		/* error occured, try to re-init connection and retry */
+		/* error occurred, try to re-init connection and retry */
 		closeConn(pData); /* close the current handle */
 		CHKiRet(initConn(pData, 0)); /* try to re-open */
 		if((dbiRes = dbi_conn_query(pData->conn, (const char*)psz)) == NULL) { /* re-try insert */

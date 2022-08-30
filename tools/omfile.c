@@ -17,7 +17,7 @@
  * pipes. These have been moved to ompipe, to reduced the entanglement
  * between the two different functionalities. -- rgerhards
  *
- * Copyright 2007-2018 Adiscon GmbH.
+ * Copyright 2007-2022 Adiscon GmbH.
  *
  * This file is part of rsyslog.
  *
@@ -70,6 +70,7 @@
 #include "cryprov.h"
 #include "parserif.h"
 #include "janitor.h"
+#include "rsconf.h"
 
 MODULE_TYPE_OUTPUT
 MODULE_TYPE_NOKEEP
@@ -223,6 +224,8 @@ struct modConfData_s {
 	gid_t fileGID;
 	gid_t dirGID;
 	int bDynafileDoNotSuspend;
+	strm_compressionDriver_t compressionDriver;
+	int compressionDriver_workers;
 };
 
 static modConfData_t *loadModConf = NULL;/* modConf ptr to use for the current load process */
@@ -232,6 +235,8 @@ static modConfData_t *runModConf = NULL;/* modConf ptr to use for the current ex
 /* module-global parameters */
 static struct cnfparamdescr modpdescr[] = {
 	{ "template", eCmdHdlrGetWord, 0 },
+	{ "compression.driver", eCmdHdlrGetWord, 0 },
+	{ "compression.zstd.workers", eCmdHdlrPositiveInt, 0 },
 	{ "dircreatemode", eCmdHdlrFileCreateMode, 0 },
 	{ "filecreatemode", eCmdHdlrFileCreateMode, 0 },
 	{ "dirowner", eCmdHdlrUID, 0 },
@@ -629,6 +634,8 @@ prepareFile(instanceData *__restrict__ const pData, const uchar *__restrict__ co
 	CHKiRet(strm.SetsIOBufSize(pData->pStrm, (size_t) pData->iIOBufSize));
 	CHKiRet(strm.SettOperationsMode(pData->pStrm, STREAMMODE_WRITE_APPEND));
 	CHKiRet(strm.SettOpenMode(pData->pStrm, cs.fCreateMode));
+	CHKiRet(strm.SetcompressionDriver(pData->pStrm, runModConf->compressionDriver));
+	CHKiRet(strm.SetCompressionWorkers(pData->pStrm, runModConf->compressionDriver_workers));
 	CHKiRet(strm.SetbSync(pData->pStrm, pData->bSyncFile));
 	CHKiRet(strm.SetsType(pData->pStrm, STREAMTYPE_FILE_SINGLE));
 	CHKiRet(strm.SetiSizeLimit(pData->pStrm, pData->iSizeLimit));
@@ -648,7 +655,7 @@ prepareFile(instanceData *__restrict__ const pData, const uchar *__restrict__ co
 
 	if(pData->useSigprov)
 		sigprovPrepare(pData, szNameBuf);
-	
+
 finalize_it:
 	if(iRet != RS_RET_OK) {
 		if(pData->pStrm != NULL) {
@@ -699,7 +706,7 @@ prepareDynFile(instanceData *__restrict__ const pData, const uchar *__restrict__
 	 * we do not know if we will otherwise come back to this file to flush it
 	 * at end of TX. see https://github.com/rsyslog/rsyslog/issues/2502
 	 */
-	if(((glblDevOptions & DEV_OPTION_8_1905_HANG_TEST) == 0) &&
+	if(((runModConf->pConf->globals.glblDevOptions & DEV_OPTION_8_1905_HANG_TEST) == 0) &&
 	    pData->bFlushOnTXEnd && pData->pStrm != NULL) {
 		CHKiRet(strm.Flush(pData->pStrm));
 	}
@@ -896,6 +903,18 @@ CODESTARTsetModCnf
 					"set via legacy directive - may lead to inconsistent "
 					"results.");
 			}
+		} else if(!strcmp(modpblk.descr[i].name, "compression.driver")) {
+			if(!es_strcasebufcmp(pvals[i].val.d.estr, (const unsigned char*) "zlib", 4)) {
+				loadModConf->compressionDriver = STRM_COMPRESS_ZIP;
+			} else if(!es_strcasebufcmp(pvals[i].val.d.estr, (const unsigned char*) "zstd", 4)) {
+				loadModConf->compressionDriver = STRM_COMPRESS_ZSTD;
+			} else {
+				parser_errmsg("omfile: error: invalid compression.driver driver "
+					"name - noch applying setting. Valid drivers: 'zlib' and "
+					"'zstd'.");
+			}
+		} else if(!strcmp(modpblk.descr[i].name, "compression.zstd.workers")) {
+			loadModConf->compressionDriver_workers = (int) pvals[i].val.d.n;
 		} else if(!strcmp(modpblk.descr[i].name, "dircreatemode")) {
 			loadModConf->fDirCreateMode = (int) pvals[i].val.d.n;
 		} else if(!strcmp(modpblk.descr[i].name, "filecreatemode")) {
@@ -947,7 +966,7 @@ janitorChkDynaFiles(instanceData *__restrict__ const pData)
 			if(pData->iCurrElt == i)
 				pData->iCurrElt = -1; /* no longer available! */
 		} else {
-			pCache[i]->nInactive += janitorInterval;
+			pCache[i]->nInactive += runModConf->pConf->globals.janitorInterval;
 		}
 	}
 }
@@ -968,7 +987,7 @@ janitorCB(void *pUsr)
 				STATSCOUNTER_INC(pData->ctrCloseTimeouts, pData->mutCtrCloseTimeouts);
 				closeFile(pData);
 			} else {
-				pData->nInactive += janitorInterval;
+				pData->nInactive += runModConf->pConf->globals.janitorInterval;
 			}
 		}
 	}

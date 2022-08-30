@@ -39,6 +39,7 @@
 #include "parser.h"
 #include "datetime.h"
 #include "unicode-helper.h"
+#include "rsconf.h"
 
 MODULE_TYPE_PARSER
 MODULE_TYPE_NOKEEP
@@ -142,7 +143,7 @@ really an AIX log, but has a similar preamble */
 	pMsg->iLenRawMsg -=1;
 	pMsg->iLenMSG -=1;
 	/* now, claim to abort so that something else can parse the now modified message */
-	DBGPRINTF("pmaixforwardedfrom: new mesage: [%d]'%s'\n", lenMsg, pMsg->pszRawMsg + pMsg->offAfterPRI);
+	DBGPRINTF("pmaixforwardedfrom: new message: [%d]'%s'\n", lenMsg, pMsg->pszRawMsg + pMsg->offAfterPRI);
 	ABORT_FINALIZE(RS_RET_COULD_NOT_PARSE);
 
 finalize_it:
@@ -174,7 +175,7 @@ CODEmodInit_QueryRegCFSLineHdlr
 	CHKiRet(objUse(datetime, CORE_COMPONENT));
 
 	DBGPRINTF("aixforwardedfrom parser init called, compiled with version %s\n", VERSION);
-	bParseHOSTNAMEandTAG = glbl.GetParseHOSTNAMEandTAG();
+	bParseHOSTNAMEandTAG = glbl.GetParseHOSTNAMEandTAG(loadConf);
 	/* cache value, is set only during rsyslogd option processing */
 
 

@@ -47,6 +47,7 @@
 #include "glbl.h"
 #include "action.h"
 #include "atomic.h"
+#include "rsconf.h"
 
 /* static data */
 DEFobjStaticHelpers
@@ -90,11 +91,12 @@ wtiGetState(wti_t *pThis)
 void ATTR_NONNULL()
 wtiJoinThrd(wti_t *const pThis)
 {
+	int r;
 	ISOBJ_TYPE_assert(pThis, wti);
 	if(wtiGetState(pThis) == WRKTHRD_WAIT_JOIN) {
 		DBGPRINTF("%s: joining terminated worker\n", wtiGetDbgHdr(pThis));
-		if(pthread_join(pThis->thrdID, NULL) != 0) {
-			LogMsg(errno, RS_RET_INTERNAL_ERROR, LOG_WARNING,
+		if((r = pthread_join(pThis->thrdID, NULL)) != 0) {
+			LogMsg(r, RS_RET_INTERNAL_ERROR, LOG_WARNING,
 				"rsyslog bug? wti cannot join terminated wrkr");
 		}
 		DBGPRINTF("%s: worker fully terminated\n", wtiGetDbgHdr(pThis));
@@ -275,13 +277,13 @@ wtiConstructFinalize(wti_t *pThis)
 	ISOBJ_TYPE_assert(pThis, wti);
 
 	DBGPRINTF("%s: finalizing construction of worker instance data (for %d actions)\n",
-		  wtiGetDbgHdr(pThis), iActionNbr);
+		  wtiGetDbgHdr(pThis), runConf->actions.iActionNbr);
 
 	/* initialize our thread instance descriptor (no concurrency here) */
 	pThis->bIsRunning = WRKTHRD_STOPPED;
 
 	/* must use calloc as we need zero-init */
-	CHKmalloc(pThis->actWrkrInfo = calloc(iActionNbr, sizeof(actWrkrInfo_t)));
+	CHKmalloc(pThis->actWrkrInfo = calloc(runConf->actions.iActionNbr, sizeof(actWrkrInfo_t)));
 
 	if(pThis->pWtp == NULL) {
 		dbgprintf("wtiConstructFinalize: pWtp not set, this may be intentional\n");
@@ -313,10 +315,10 @@ wtiWorkerCancelCleanup(void *arg)
 	pWtp = pThis->pWtp;
 	ISOBJ_TYPE_assert(pWtp, wtp);
 
-	DBGPRINTF("%s: cancelation cleanup handler called.\n", wtiGetDbgHdr(pThis));
+	DBGPRINTF("%s: cancellation cleanup handler called.\n", wtiGetDbgHdr(pThis));
 	pWtp->pfObjProcessed(pWtp->pUsr, pThis);
-	DBGPRINTF("%s: done cancelation cleanup handler.\n", wtiGetDbgHdr(pThis));
-	
+	DBGPRINTF("%s: done cancellation cleanup handler.\n", wtiGetDbgHdr(pThis));
+
 }
 
 
@@ -349,7 +351,7 @@ wtiWaitNonEmpty(wti_t *const pThis, const struct timespec timeout)
  * rgerhards, 2009-05-20
  */
 static void ATTR_NONNULL()
-doIdleProcessing(wti_t *const pThis, wtp_t *const pWtp, int *const pbInactivityTOOccured)
+doIdleProcessing(wti_t *const pThis, wtp_t *const pWtp, int *const pbInactivityTOOccurred)
 {
 	struct timespec t;
 
@@ -362,7 +364,7 @@ doIdleProcessing(wti_t *const pThis, wtp_t *const pWtp, int *const pbInactivityT
 		timeoutComp(&t, pWtp->toWrkShutdown);/* get absolute timeout */
 		if(d_pthread_cond_timedwait(&pThis->pcondBusy, pWtp->pmutUsr, &t) != 0) {
 			DBGPRINTF("%s: inactivity timeout, worker terminating...\n", wtiGetDbgHdr(pThis));
-			*pbInactivityTOOccured = 1; /* indicate we had a timeout */
+			*pbInactivityTOOccurred = 1; /* indicate we had a timeout */
 		}
 	}
 	DBGOPRINT((obj_t*) pThis, "worker awoke from idle processing\n");
@@ -391,7 +393,7 @@ wtiWorker(wti_t *__restrict__ const pThis)
 
 	dbgSetThrdName(pThis->pszDbgHdr);
 	pthread_cleanup_push(wtiWorkerCancelCleanup, pThis);
-	int bInactivityTOOccured = 0;
+	int bInactivityTOOccurred = 0;
 	pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, &iCancelStateSave);
 	DBGPRINTF("wti %p: worker starting\n", pThis);
 	/* now we have our identity, on to real processing */
@@ -430,22 +432,22 @@ wtiWorker(wti_t *__restrict__ const pThis)
 		if(localRet == RS_RET_ERR_QUEUE_EMERGENCY) {
 			break;	/* end of loop */
 		} else if(localRet == RS_RET_IDLE) {
-			if(terminateRet == RS_RET_TERMINATE_WHEN_IDLE || bInactivityTOOccured) {
+			if(terminateRet == RS_RET_TERMINATE_WHEN_IDLE || bInactivityTOOccurred) {
 				DBGOPRINT((obj_t*) pThis, "terminating worker terminateRet=%d, "
-					"bInactivityTOOccured=%d\n", terminateRet, bInactivityTOOccured);
+					"bInactivityTOOccurred=%d\n", terminateRet, bInactivityTOOccurred);
 				break;	/* end of loop */
 			}
-			doIdleProcessing(pThis, pWtp, &bInactivityTOOccured);
+			doIdleProcessing(pThis, pWtp, &bInactivityTOOccurred);
 			continue; /* request next iteration */
 		}
 
-		bInactivityTOOccured = 0; /* reset for next run */
+		bInactivityTOOccurred = 0; /* reset for next run */
 	}
 
 	d_pthread_mutex_unlock(pWtp->pmutUsr);
 
 	DBGPRINTF("DDDD: wti %p: worker cleanup action instances\n", pThis);
-	for(i = 0 ; i < iActionNbr ; ++i) {
+	for(i = 0 ; i < runConf->actions.iActionNbr ; ++i) {
 		wrkrInfo = &(pThis->actWrkrInfo[i]);
 		dbgprintf("wti %p, action %d, ptr %p\n", pThis, i, wrkrInfo->actWrkrData);
 		if(wrkrInfo->actWrkrData != NULL) {
@@ -496,7 +498,7 @@ wtiSetDbgHdr(wti_t *pThis, uchar *pszMsg, const size_t lenMsg)
 
 	ISOBJ_TYPE_assert(pThis, wti);
 	assert(pszMsg != NULL);
-	
+
 	if(lenMsg < 1)
 		ABORT_FINALIZE(RS_RET_PARAM_ERROR);
 

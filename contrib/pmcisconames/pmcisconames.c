@@ -40,6 +40,7 @@
 #include "parser.h"
 #include "datetime.h"
 #include "unicode-helper.h"
+#include "rsconf.h"
 
 MODULE_TYPE_PARSER
 MODULE_TYPE_NOKEEP
@@ -142,7 +143,7 @@ CODESTARTparse
 	pMsg->iLenRawMsg -=2;
 	pMsg->iLenMSG -=2;
 	/* now, claim to abort so that something else can parse the now modified message */
-	DBGPRINTF("pmcisconames: new mesage: [%d]'%s'\n", lenMsg, p2parse);
+	DBGPRINTF("pmcisconames: new message: [%d]'%s'\n", lenMsg, p2parse);
 	ABORT_FINALIZE(RS_RET_COULD_NOT_PARSE);
 
 finalize_it:
@@ -174,7 +175,7 @@ CODEmodInit_QueryRegCFSLineHdlr
 	CHKiRet(objUse(datetime, CORE_COMPONENT));
 
 	DBGPRINTF("cisconames parser init called, compiled with version %s\n", VERSION);
-	bParseHOSTNAMEandTAG = glbl.GetParseHOSTNAMEandTAG();
+	bParseHOSTNAMEandTAG = glbl.GetParseHOSTNAMEandTAG(loadConf);
 	/* cache value, is set only during rsyslogd option processing */
 
 

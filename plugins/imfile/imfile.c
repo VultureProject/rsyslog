@@ -84,6 +84,7 @@ MODULE_CNFNAME("imfile")
 /* defines */
 #define FILE_ID_HASH_SIZE 20	/* max size of a file_id hash */
 #define FILE_ID_SIZE	512	/* how many bytes are used for file-id? */
+#define FILE_DELETE_DELAY 5	/* how many seconds to wait before finally deleting a gone file */
 
 /* Module static data */
 DEF_IMOD_STATIC_DATA	/* must be present, starts static data */
@@ -209,6 +210,7 @@ struct act_obj_s {
 	ratelimit_t *ratelimiter;
 	multi_submit_t multiSub;
 	int is_symlink;
+	time_t time_to_delete;	/* Helper variable to DELAY the actual file delete in act_obj_unlink */
 };
 struct fs_edge_s {
 	fs_node_t *parent;	/* node pointing to this edge */
@@ -389,7 +391,7 @@ getStateFileDir(void)
 	const uchar *wrkdir;
 	assert(currModConf != NULL);
 	if(currModConf->stateFileDirectory == NULL) {
-		wrkdir = glblGetWorkDirRaw();
+		wrkdir = glblGetWorkDirRaw(currModConf->pConf);
 	} else {
 		wrkdir = currModConf->stateFileDirectory;
 	}
@@ -733,7 +735,7 @@ act_obj_add(fs_edge_t *const edge, const char *const name, const int is_file,
 	char basename[MAXFNAME];
 	DEFiRet;
 	int fd = -1;
-	
+
 	DBGPRINTF("act_obj_add: edge %p, name '%s' (source '%s')\n", edge, name, source? source : "---");
 
 	if (isIgnoreOlderFile(edge->instarr[0], name)) {
@@ -774,6 +776,7 @@ act_obj_add(fs_edge_t *const edge, const char *const name, const int is_file,
 	act->file_id_prev[0] = '\0';
 	act->is_symlink = is_symlink;
 	act->ratelimiter = NULL;
+	act->time_to_delete = 0;
 	if (source) { /* we are target of symlink */
 		CHKmalloc(act->source_name = strdup(source));
 	} else {
@@ -827,26 +830,49 @@ detect_updates(fs_edge_t *const edge)
 
 	for(act = edge->active ; act != NULL ; act = act->next) {
 		DBGPRINTF("detect_updates checking active obj '%s'\n", act->name);
-		const int r = lstat(act->name, &fileInfo);
+		// lstat() has the disadvantage, that we get "deleted" when the name has changed
+		// but inode is still the same (like with logrotate)
+		int r = lstat(act->name, &fileInfo);
 		if(r == -1) { /* object gone away? */
-			DBGPRINTF("object gone away, unlinking: '%s'\n", act->name);
-			act_obj_unlink(act);
-			restart = 1;
+			/* now let's see if the file itself already exist (e.g. rotated away) */
+			/* NOTE: this will NOT stall the file. The reason is that when a new file
+			 * with the same name is detected, we will not run into this code.
+			 TODO: check the full implications, there are for sure some!
+			       e.g. file has been closed, so we will never have old inode (but
+			            why was it closed then? --> check)
+			 */
+			r = fstat(act->ino, &fileInfo);
+			if(r == -1) {
+				time_t ttNow;
+				time(&ttNow);
+				if (act->time_to_delete == 0) {
+					act->time_to_delete = ttNow;
+				}
+				/* First time we run into this code, we need to give imfile a little time to process
+				*  the old file in case a process is still writing into it until the FILE_DELETE_DELAY
+				*  is reached OR the inode has changed (see elseif below). In most cases, the
+				*  delay will never be reached and the file will be closed when the inode has changed.
+				*/
+				if (act->time_to_delete + FILE_DELETE_DELAY < ttNow) {
+					DBGPRINTF("detect_updates obj gone away, unlinking: '%s', ttDelete: %ld/%ld\n",
+						act->name, act->time_to_delete, ttNow);
+					act_obj_unlink(act);
+					restart = 1;
+				} else {
+					DBGPRINTF("detect_updates obj gone away, keep '%s' open: %ld/%ld/%lds!\n",
+						act->name, act->time_to_delete, ttNow, ttNow - act->time_to_delete);
+					pollFile(act);
+				}
+			}
 			break;
 		} else if(fileInfo.st_ino != act->ino) {
 			DBGPRINTF("file '%s' inode changed from %llu to %llu, unlinking from "
 				"internal lists\n", act->name, (long long unsigned) act->ino,
 				(long long unsigned) fileInfo.st_ino);
-			if(act->pStrm != NULL) {
-				/* we do no need to re-set later, as act_obj_unlink
-				 * will destroy the strm obj */
-				strmSet_checkRotation(act->pStrm, STRM_ROTATION_DO_NOT_CHECK);
-			}
 			act_obj_unlink(act);
 			restart = 1;
 			break;
 		}
-
 	}
 
 	if (restart) {
@@ -985,7 +1011,7 @@ poll_timeouts(fs_edge_t *const edge)
 		act_obj_t *act;
 		for(act = edge->active ; act != NULL ; act = act->next) {
 			if(act->pStrm && strmReadMultiLine_isTimedOut(act->pStrm)) {
-				DBGPRINTF("timeout occured on %s\n", act->name);
+				DBGPRINTF("timeout occurred on %s\n", act->name);
 				pollFile(act);
 			}
 		}
@@ -1040,6 +1066,7 @@ act_obj_destroy(act_obj_t *const act, const int is_deleted)
 	}
 	#ifdef HAVE_INOTIFY_INIT
 	if(act->wd != -1) {
+		inotify_rm_watch(ino_fd, act->wd);
 		wdmapDel(act->wd);
 	}
 	#endif
@@ -1102,7 +1129,8 @@ chk_active(const act_obj_t *act, const act_obj_t *const deleted)
 static void ATTR_NONNULL()
 act_obj_unlink(act_obj_t *act)
 {
-	DBGPRINTF("act_obj_unlink %p: %s, pStrm %p\n", act, act->name, act->pStrm);
+	DBGPRINTF("act_obj_unlink %p: %s, pStrm %p, ttDelete: %ld\n",
+		act, act->name, act->pStrm, act->time_to_delete);
 	if(act->prev == NULL) {
 		act->edge->active = act->next;
 	} else {
@@ -2443,10 +2471,11 @@ do_inotify(void)
 	int rd;
 	int currev;
 	static int last_timeout = 0;
+	struct pollfd pollfd;
 	DEFiRet;
 
 	CHKiRet(wdmapInit());
-	ino_fd = inotify_init();
+	ino_fd = inotify_init1(IN_NONBLOCK);
 	if(ino_fd < 0) {
 		LogError(errno, RS_RET_INOTIFY_INIT_FAILED, "imfile: Init inotify "
 			"instance failed ");
@@ -2457,58 +2486,73 @@ do_inotify(void)
 	do_initial_poll_run();
 
 	while(glbl.GetGlobalInputTermState() == 0) {
-		if(runModConf->haveReadTimeouts) {
-			int r;
-			struct pollfd pollfd;
-			pollfd.fd = ino_fd;
-			pollfd.events = POLLIN;
-			do {
-				r = poll(&pollfd, 1, runModConf->timeoutGranularity);
-			} while(r  == -1 && errno == EINTR);
-			if(r == 0) {
-				DBGPRINTF("readTimeouts are configured, checking if some apply\n");
+		int r;
+
+		pollfd.fd = ino_fd;
+		pollfd.events = POLLIN;
+
+		if (runModConf->haveReadTimeouts)
+			r = poll(&pollfd, 1, runModConf->timeoutGranularity);
+		else
+			r = poll(&pollfd, 1, -1);
+
+		if (r  == -1 && errno == EINTR) {
+			DBGPRINTF("do_inotify interrupted while polling on ino_fd\n");
+			continue;
+		}
+		if(r == 0) {
+			DBGPRINTF("readTimeouts are configured, checking if some apply\n");
+			if (runModConf->haveReadTimeouts) {
 				fs_node_walk(runModConf->conf_tree, poll_timeouts);
 				last_timeout = time(NULL);
-				continue;
-			} else if (r == -1) {
-				LogError(errno, RS_RET_INTERNAL_ERROR,
+			}
+			continue;
+		} else if (r == -1) {
+			LogError(errno, RS_RET_INTERNAL_ERROR,
 					"%s:%d: unexpected error during poll timeout wait",
 					__FILE__, __LINE__);
-				/* we do not abort, as this would render the whole input defunct */
-				continue;
-			} else if(r != 1) {
-				LogError(errno, RS_RET_INTERNAL_ERROR,
+			/* we do not abort, as this would render the whole input defunct */
+			continue;
+		} else if(r != 1) {
+			LogError(errno, RS_RET_INTERNAL_ERROR,
 					"%s:%d: ERROR: poll returned more fds (%d) than given to it (1)",
 					__FILE__, __LINE__, r);
-				/* we do not abort, as this would render the whole input defunct */
+			/* we do not abort, as this would render the whole input defunct */
+			continue;
+		}
+		else {
+			// process timeouts always, ino_fd may be too busy to ever have timeout occur from poll
+			if(runModConf->haveReadTimeouts) {
+				int now = time(NULL);
+				if(last_timeout + (runModConf->timeoutGranularity / 1000) > now) {
+					fs_node_walk(runModConf->conf_tree, poll_timeouts);
+					last_timeout = time(NULL);
+				}
+			}
+			rd = read(ino_fd, iobuf, sizeof(iobuf));
+			if(rd == -1 && errno == EINTR) {
+				/* This might have been our termination signal! */
+				DBGPRINTF("EINTR received during inotify, restarting poll\n");
 				continue;
 			}
-		}
-		rd = read(ino_fd, iobuf, sizeof(iobuf));
-		if(rd == -1 && errno == EINTR) {
-			/* This might have been our termination signal! */
-			DBGPRINTF("EINTR received during inotify, restarting poll\n");
-			continue;
-		}
-		if(rd < 0) {
-			LogError(errno, RS_RET_IO_ERROR, "imfile: error during inotify - ignored");
-			continue;
-		}
-		currev = 0;
-		while(currev < rd) {
-			union {
-				char *buf;
-				struct inotify_event *ev;
-			} savecast;
-			savecast.buf = iobuf+currev;
-			in_dbg_showEv(savecast.ev);
-			in_processEvent(savecast.ev);
-			currev += sizeof(struct inotify_event) + savecast.ev->len;
-		}
-		int now = time(NULL);
-		if(last_timeout + (runModConf->timeoutGranularity / 1000) > now) {
-			fs_node_walk(runModConf->conf_tree, poll_timeouts);
-			last_timeout = time(NULL);
+			if (rd == -1 && errno == EWOULDBLOCK) {
+				continue;
+			}
+			if(rd < 0) {
+				LogError(errno, RS_RET_IO_ERROR, "imfile: error during inotify - ignored");
+				continue;
+			}
+			currev = 0;
+			while(currev < rd) {
+				union {
+					char *buf;
+					struct inotify_event *ev;
+				} savecast;
+				savecast.buf = iobuf+currev;
+				in_dbg_showEv(savecast.ev);
+				in_processEvent(savecast.ev);
+				currev += sizeof(struct inotify_event) + savecast.ev->len;
+			}
 		}
 	}
 
