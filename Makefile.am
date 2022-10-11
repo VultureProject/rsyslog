@@ -266,6 +266,10 @@ if ENABLE_MMDARWIN
 SUBDIRS += contrib/mmdarwin
 endif
 
+if ENABLE_MMDGA
+SUBDIRS += contrib/mmdga
+endif
+
 if ENABLE_MMFIELDS
 SUBDIRS += plugins/mmfields
 endif
@@ -421,6 +425,10 @@ endif
 
 if ENABLE_MMDARWIN
 DISTCHECK_CONFIGURE_FLAGS+= --enable-mmdarwin
+endif
+
+if ENABLE_MMDGA
+DISTCHECK_CONFIGURE_FLAGS+= --enable-mmdga
 endif
 
 if ENABLE_MMNORMALIZE

@@ -871,6 +871,11 @@ TESTS += \
 endif # HAVE_VALGRIND
 endif # ENABLE_IMPROG
 
+if ENABLE_MMDGA
+TESTS +=  \
+	mmdga_test.sh
+endif # ENABLE_MMDGA
+
 if ENABLE_OMPROG
 TESTS +=  \
 	omprog-defaults.sh \

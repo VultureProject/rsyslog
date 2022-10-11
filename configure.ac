@@ -1544,6 +1544,18 @@ if test "x$enable_mmdarwin"; then
 fi
 AM_CONDITIONAL(ENABLE_MMDARWIN, test x$enable_mmdarwin = xyes)
 
+# mmdga
+AC_ARG_ENABLE(mmdga,
+        [AS_HELP_STRING([--enable-mmdga],[Enable mmdb lookup helper @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_mmdga="yes" ;;
+          no) enable_mmdga="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-mmdga) ;;
+         esac],
+        [enable_mmdga=no]
+)
+AM_CONDITIONAL(ENABLE_MMDGA, test x$enable_mmdga = xyes)
+
 
 
 
@@ -2784,6 +2796,7 @@ AC_CONFIG_FILES([Makefile \
 		plugins/pmlastmsg/Makefile \
 		plugins/mmdblookup/Makefile \
     		contrib/mmdarwin/Makefile \
+    		contrib/mmdga/Makefile \
 		contrib/omhttp/Makefile \
 		contrib/fmhash/Makefile \
 		contrib/fmunflatten/Makefile \
@@ -2910,6 +2923,7 @@ echo "    mmpstrucdata enabled:                     $enable_mmpstrucdata"
 echo "    mmsequence enabled:                       $enable_mmsequence"
 echo "    mmdblookup enabled:                       $enable_mmdblookup"
 echo "    mmdarwin enabled:                         $enable_mmdarwin"
+echo "    mmdga enabled:                            $enable_mmdga"
 echo "    mmfields enabled:                         $enable_mmfields"
 echo "    mmrm1stspace module enabled:              $enable_mmrm1stspace"
 echo "    mmkubernetes enabled:                     $enable_mmkubernetes"
