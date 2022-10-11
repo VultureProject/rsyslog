@@ -48,6 +48,7 @@ bool LFURead(lfu_cache_t* pCache, const uchar* domain, float* score) {
         if(strncmp(domain, pCache->entries[i].domain, 80) == 0){
             pCache->entries[i].usage++;
             *score = pCache->entries[i].score;
+            return 1;
         }
     }
     return 0;

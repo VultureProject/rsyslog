@@ -33,7 +33,7 @@ ruleset(name="testing" queue.workerThreads="4") {
 # export RSYSLOG_DEBUGLOG="log"
 
  startup
-tcpflood -I '/workspaces/rsyslog/dga_model/domains'
+tcpflood -I '/workspaces/rsyslog/dga_model/extract.json'
 shutdown_when_empty
 wait_shutdown
 content_check --regex '"dga_score": 0.' # it should match the saved certitude
