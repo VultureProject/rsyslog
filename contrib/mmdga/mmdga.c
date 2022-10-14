@@ -385,7 +385,7 @@ CODESTARTnewActInst
 
 	pData->pFaupOpts = faup_options_new();
 
-	pData->cache = LFUCacheCreate(pData->cacheSize);
+	pData->cache = LFUCacheCreate(pData->cacheSize, pData->cacheSize/10);
 
 	CODE_STD_STRING_REQUESTnewActInst(1)
 	CHKiRet(OMSRsetEntry(*ppOMSR, 0, NULL, OMSR_TPL_AS_MSG));
