@@ -1,4 +1,4 @@
-/* mmtaghostname.c
+/* mmdga.c
  * This is a message modification module.
  *
  * The name of the module is inspired by the parser module pmnull
@@ -55,11 +55,16 @@
 #include "dirty.h"
 #include "unicode-helper.h"
 #include "cache.h"
+#include "tokenise.h"
 
 #include <tensorflow/lite/c/c_api.h>
-#include <faup/faup.h>
-#include <faup/decode.h>
-#include <faup/output.h>
+#ifdef DGA_PERFS
+	#pragma message("Perfs compiled!")
+#endif
+#ifdef NPU_OPTIM
+	#include <tensorflow/lite/c/c_api_experimental.h>
+	#pragma message("NPU optim compiled!")
+#endif
 
 MODULE_TYPE_OUTPUT
 MODULE_TYPE_NOKEEP
@@ -89,7 +94,6 @@ typedef struct _instanceData {
 	size_t domainInputFieldLen;
 	char* scoreOutputField;
 	size_t scoreOutputFieldLen;
-	faup_options_t* pFaupOpts;
 	TfLiteInterpreterOptions* pTfOpts;
 	TfLiteModel* pTfModel;
 	size_t cacheSize;
@@ -99,127 +103,41 @@ typedef struct _instanceData {
 typedef struct wrkrInstanceData {
 	instanceData *pData;
 	TfLiteInterpreter* pInterp;
-	faup_handler_t* pFaupHandler;
+#ifdef DGA_PERFS
 	double time;
 	long int nb;
 	int cache_hit;
 	double wait_time;
+#endif
 } wrkrInstanceData_t;
 
-
-int token(char a){
-    switch(a){
-        case '.': return 1;
-        case '-': return 2;
-        case '_': return 3;
-        case '0': return 4;
-        case '1': return 5;
-        case '2': return 6;
-        case '3': return 7;
-        case '4': return 8;
-        case '5': return 9;
-        case '6': return 10;
-        case '7': return 11;
-        case '8': return 12;
-        case '9': return 13;
-        case 'a': return 14;
-        case 'b': return 15;
-        case 'c': return 16;
-        case 'd': return 17;
-        case 'e': return 18;
-        case 'f': return 19;
-        case 'g': return 20;
-        case 'h': return 21;
-        case 'i': return 22;
-        case 'j': return 23;
-        case 'k': return 24;
-        case 'l': return 25;
-        case 'm': return 26;
-        case 'n': return 27;
-        case 'o': return 28;
-        case 'p': return 29;
-        case 'q': return 30;
-        case 'r': return 31;
-        case 's': return 32;
-        case 't': return 33;
-        case 'u': return 34;
-        case 'v': return 35;
-        case 'w': return 36;
-        case 'x': return 37;
-        case 'y': return 38;
-        case 'z': return 39;
-        case 'A': return 40;
-        case 'B': return 41;
-        case 'C': return 42;
-        case 'D': return 43;
-        case 'E': return 44;
-        case 'F': return 45;
-        case 'G': return 46;
-        case 'H': return 47;
-        case 'I': return 48;
-        case 'J': return 49;
-        case 'K': return 50;
-        case 'L': return 51;
-        case 'M': return 52;
-        case 'N': return 53;
-        case 'O': return 54;
-        case 'P': return 55;
-        case 'Q': return 56;
-        case 'R': return 57;
-        case 'S': return 58;
-        case 'T': return 59;
-        case 'U': return 60;
-        case 'V': return 61;
-        case 'W': return 62;
-        case 'X': return 63;
-        case 'Y': return 64;
-        case 'Z': return 65;
-        default:  return 0;
-    }
-}
 
 void tf_custom_error(void* user_data, const char* format, va_list args) {
     // DBGPRINTF("mmdga::%s: Error TFLite ", (const char*)user_data);
 	// use user_data as stage, but tf opts need to be pushed to worker instead of instance to avoid race condition
-    DBGPRINTF("mmdga:: TFLite: ", (const char*)user_data);
+	DBGPRINTF("mmdga:: TFLite: ");
+    if(user_data != NULL){
+		DBGPRINTF("%s : ", (const char *)user_data);
+	}
     DBGPRINTF(format, args);
     DBGPRINTF("\n");
 }
 
-rsRetVal preprocess(const uchar* domain, faup_handler_t* fh, uchar** processedDomain) {
-	if(faup_decode(fh, domain, strlen(domain)) == NULL) {
-		return RS_RET_ERR;
-	}
-	size_t processedDomainLen = faup_get_domain_without_tld_size(fh) + faup_get_tld_size(fh) + 2;
-	*processedDomain = (uchar*)malloc(sizeof(uchar)*(processedDomainLen));
-
-	if(*processedDomain == NULL){
-		return RS_RET_OUT_OF_MEMORY;
-	}
-
-	memcpy(*processedDomain, domain + faup_get_domain_without_tld_pos(fh), faup_get_domain_without_tld_size(fh));
-	memcpy(*processedDomain + faup_get_domain_without_tld_size(fh) + 1, domain + faup_get_tld_pos(fh), faup_get_tld_size(fh));
-	(*processedDomain)[faup_get_domain_without_tld_size(fh)] = '.';
-	(*processedDomain)[processedDomainLen-1] = '\0';
-	DBGPRINTF("domain: '%s', proc len: %lu\n", domain, processedDomainLen);
-	DBGPRINTF("domain: '%s' processed, proc len: %lu\n", *processedDomain, strlen(*processedDomain));
-	return RS_RET_OK;
-}
-
-rsRetVal process(const uchar* input, const TfLiteInterpreter* interpreter, double* score) {
+rsRetVal process(const uchar* input, TfLiteInterpreter* interpreter, float* score) {
 	TfLiteStatus tfiRet;
     float score_f;
 
-	float domain[80] = {0.0f};
-    size_t inputLen = strlen(input);
+	float domain[DOMAIN_MAX_SIZE] = {0.0f};
+    const size_t domainSize = sizeof(domain);
+    const size_t inputLen = strlen((const char *)input);
 
 	
 	DBGPRINTF("Processing %s with model\n", input);
-    for(int i=79; i>79-inputLen; i--){
-        domain[i] = (float)token(input[inputLen-1-(79-i)]);
+	const size_t last_index = DOMAIN_MAX_SIZE-1;
+    for(size_t i=last_index; i>last_index-inputLen; i--){
+        domain[i] = token(input[inputLen-1-(last_index-i)]);
     }
 
-    size_t domainSize = sizeof(domain);
 	
 	TfLiteTensor* pInput = TfLiteInterpreterGetInputTensor(interpreter, 0);
 	if(pInput == NULL){
@@ -227,7 +145,6 @@ rsRetVal process(const uchar* input, const TfLiteInterpreter* interpreter, doubl
 		return RS_RET_ERR;
 	}
     
-    size_t size = TfLiteTensorByteSize(pInput);
     tfiRet = TfLiteTensorCopyFromBuffer(pInput, domain, domainSize);
 	if(tfiRet != kTfLiteOk) {
 		dbgprintf("mmdga::doAction::process: TfLiteTensorCopyFromBuffer failed with error : %d", (int)tfiRet);
@@ -256,9 +173,6 @@ rsRetVal process(const uchar* input, const TfLiteInterpreter* interpreter, doubl
 }
 
 
-
-
-
 BEGINcreateWrkrInstance
 	TfLiteStatus tfiRet;
 
@@ -274,24 +188,24 @@ CODESTARTcreateWrkrInstance
 		return (RS_RET_ERR);
 	}
 
-	pWrkrData->pFaupHandler = faup_init(pWrkrData->pData->pFaupOpts);
-
+#ifdef DGA_PERFS
 	pWrkrData->time = 0;
 	pWrkrData->nb = 0;
 
 	pWrkrData->cache_hit = 0;
 	pWrkrData->wait_time = 0;
-
+#endif
 ENDcreateWrkrInstance
 
 BEGINfreeWrkrInstance
 CODESTARTfreeWrkrInstance
+#ifdef DGA_PERFS
 	double total_ms = pWrkrData->time;
 	double mean = total_ms / (double)pWrkrData->nb;
 	printf("\nTIME FOR MMDGA : %f ms, %lu calls, %f ms/call\n", total_ms, pWrkrData->nb, mean);
 	printf("CACHE WAIT TIME : %f us for %d cache hits\n", pWrkrData->wait_time, pWrkrData->cache_hit);
+#endif
     TfLiteInterpreterDelete(pWrkrData->pInterp);
-	faup_terminate(pWrkrData->pFaupHandler);
 ENDfreeWrkrInstance
 
 BEGINdbgPrintInstInfo
@@ -310,7 +224,6 @@ CODESTARTcreateInstance
 	pData->domainInputFieldLen = 0;
 	pData->scoreOutputField = NULL;
 	pData->scoreOutputFieldLen = 0;
-	pData->pFaupOpts = NULL;
 	pData->pTfOpts = NULL;
 	pData->pTfModel = NULL;
 	pData->cacheSize = 0;
@@ -318,10 +231,10 @@ ENDcreateInstance
 
 BEGINfreeInstance
 CODESTARTfreeInstance
+	LFUCacheDelete(&pData->cache);
 	free(pData->modelPath);
 	free(pData->domainInputField);
 	free(pData->scoreOutputField);
-	faup_options_free(pData->pFaupOpts);
 	TfLiteInterpreterOptionsDelete(pData->pTfOpts);
 	TfLiteModelDelete(pData->pTfModel);
 ENDfreeInstance
@@ -335,9 +248,7 @@ BEGINnewActInst
 	int i;
 CODESTARTnewActInst
 	DBGPRINTF("newParserInst (mmdga)\n");
-	char* tf_ver = TfLiteVersion();
-
-	DBGPRINTF("MMDGA::NewInstance: TENSORFLITE LITE VERSION : %s\n", tf_ver);
+	DBGPRINTF("MMDGA::NewInstance: TENSORFLITE LITE VERSION : %s\n", TfLiteVersion());
 	CHKiRet(createInstance(&pData));
 
 	if(lst == NULL)
@@ -382,8 +293,9 @@ CODESTARTnewActInst
 	pData->pTfOpts = TfLiteInterpreterOptionsCreate();
     TfLiteInterpreterOptionsSetNumThreads(pData->pTfOpts, 1);
     TfLiteInterpreterOptionsSetErrorReporter(pData->pTfOpts, tf_custom_error, NULL);
-
-	pData->pFaupOpts = faup_options_new();
+#ifdef NPU_OPTIM
+	TfLiteInterpreterOptionsSetUseNNAPI(pData->pTfOpts, true);
+#endif
 
 	pData->cache = LFUCacheCreate(pData->cacheSize, pData->cacheSize/10);
 
@@ -411,50 +323,63 @@ BEGINdoAction_NoStrings
 	smsg_t **ppMsg = (smsg_t **) pMsgData;
 	smsg_t *pMsg = ppMsg[0];
 	instanceData *pData = pWrkrData->pData;
+#ifdef DGA_PERFS
 	struct timespec start, end, cache_start, cache_end; 
-CODESTARTdoAction
-	pWrkrData->nb++;
-	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
-	DBGPRINTF("Message will now be managed by mmdga\n");
-
-	msgPropDescr_t propDesc;
-	msgPropDescrFill(&propDesc, (uchar *)pData->domainInputField, strlen(pData->domainInputField));
-
+#endif
 	struct json_object * pDummy = NULL;
 	uchar* domain = NULL;
+	msgPropDescr_t propDesc;
+	float score = -1.0f;
+	char * processed_domain = NULL;
+CODESTARTdoAction
+#ifdef DGA_PERFS
+	pWrkrData->nb++;
+	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &start);
+#endif
+	DBGPRINTF("Message will now be managed by mmdga\n");
+
+	msgPropDescrFill(&propDesc, (uchar*)pData->domainInputField, pData->domainInputFieldLen);
+	DBGPRINTF("Message will now be managed by mmdga\n");
 	CHKiRet(msgGetJSONPropJSONorString(pMsg, &propDesc, &pDummy, &domain));
+	DBGPRINTF("Message will now be managed by mmdga\n");
 
 	if(pDummy != NULL) {
 		DBGPRINTF("mmdga::doAction: domain is not string\n");
+		json_object_put(pDummy);
 		FINALIZE;
 	}
 
-	double score = -1.0f;
-	char * processed_domain = NULL;
-
-	CHKiRet(preprocess(domain, pWrkrData->pFaupHandler, &processed_domain));
+#ifdef DGA_PERFS
 	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cache_start);
-	bool read = LFURead(&pData->cache, processed_domain, &score);
+#endif
+	bool read = LFURead(&pData->cache, domain, &score);
+#ifdef DGA_PERFS
 	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &cache_end);
+#endif
 	if(!read){
-		CHKiRet(process(processed_domain, pWrkrData->pInterp, &score));
-		LFUWrite(&pData->cache, processed_domain, score);
-	} else {
+		CHKiRet(process(domain, pWrkrData->pInterp, &score));
+		LFUWrite(&pData->cache, domain, score);
+	} 
+#ifdef DGA_PERFS
+	else {
 		pWrkrData->cache_hit++;
 	}
+#endif
 
-
-	CHKiRet(msgAddJSON(pMsg, pData->scoreOutputField, json_object_new_double(score), 0, 0));
+	CHKiRet(msgAddJSON(pMsg, (uchar *)pData->scoreOutputField, json_object_new_double(score), 0, 0));
 
 finalize_it:
+#ifdef DGA_PERFS
 	clock_gettime(CLOCK_THREAD_CPUTIME_ID, &end);
 	struct timespec d = diff(start, end);
 	pWrkrData->time += d.tv_nsec/1000000.0;
 
 	struct timespec d_cache = diff(cache_start, cache_end);
 	pWrkrData->wait_time += d_cache.tv_nsec/1000.0;
-
+#endif
+	free(processed_domain);
 	free(domain);
+	msgPropDescrDestruct(&propDesc);
 ENDdoAction
 
 BEGINtryResume

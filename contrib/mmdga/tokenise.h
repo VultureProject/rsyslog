@@ -1,0 +1,72 @@
+#pragma once
+
+float token(char a){
+    switch(a){
+        case '.': return 1.0f;
+        case '-': return 2.0f;
+        case '_': return 3.0f;
+        case '0': return 4.0f;
+        case '1': return 5.0f;
+        case '2': return 6.0f;
+        case '3': return 7.0f;
+        case '4': return 8.0f;
+        case '5': return 9.0f;
+        case '6': return 10.0f;
+        case '7': return 11.0f;
+        case '8': return 12.0f;
+        case '9': return 13.0f;
+        case 'a': return 14.0f;
+        case 'b': return 15.0f;
+        case 'c': return 16.0f;
+        case 'd': return 17.0f;
+        case 'e': return 18.0f;
+        case 'f': return 19.0f;
+        case 'g': return 20.0f;
+        case 'h': return 21.0f;
+        case 'i': return 22.0f;
+        case 'j': return 23.0f;
+        case 'k': return 24.0f;
+        case 'l': return 25.0f;
+        case 'm': return 26.0f;
+        case 'n': return 27.0f;
+        case 'o': return 28.0f;
+        case 'p': return 29.0f;
+        case 'q': return 30.0f;
+        case 'r': return 31.0f;
+        case 's': return 32.0f;
+        case 't': return 33.0f;
+        case 'u': return 34.0f;
+        case 'v': return 35.0f;
+        case 'w': return 36.0f;
+        case 'x': return 37.0f;
+        case 'y': return 38.0f;
+        case 'z': return 39.0f;
+        case 'A': return 40.0f;
+        case 'B': return 41.0f;
+        case 'C': return 42.0f;
+        case 'D': return 43.0f;
+        case 'E': return 44.0f;
+        case 'F': return 45.0f;
+        case 'G': return 46.0f;
+        case 'H': return 47.0f;
+        case 'I': return 48.0f;
+        case 'J': return 49.0f;
+        case 'K': return 50.0f;
+        case 'L': return 51.0f;
+        case 'M': return 52.0f;
+        case 'N': return 53.0f;
+        case 'O': return 54.0f;
+        case 'P': return 55.0f;
+        case 'Q': return 56.0f;
+        case 'R': return 57.0f;
+        case 'S': return 58.0f;
+        case 'T': return 59.0f;
+        case 'U': return 60.0f;
+        case 'V': return 61.0f;
+        case 'W': return 62.0f;
+        case 'X': return 63.0f;
+        case 'Y': return 64.0f;
+        case 'Z': return 65.0f;
+        default:  return 0.0f;
+    }
+}
