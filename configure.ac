@@ -2662,16 +2662,46 @@ if test "x$enable_omhiredis" = "xyes" -o "x$enable_imhiredis" = "xyes" ; then
             [AC_MSG_ERROR([hiredis not found])]
         )]
     )
+    PKG_CHECK_MODULES(HIREDIS_SSL, hiredis_ssl >= 0.10.1, 
+	# hiredis_ssl found
+	[
+        AC_DEFINE(HIREDIS_SSL, 1, [TLS support enabled in hiredis])
+	],
+        [AC_SEARCH_LIBS(redisCreateSSLContext, hiredis_ssl,
+            [AC_COMPILE_IFELSE(
+                [AC_LANG_PROGRAM(
+                    [[ #include <hiredis/hiredis.h> 
+		       #include <hiredis/hiredis_ssl.h>
+		     ]],
+                    [[ #define major 0
+                       #define minor 10
+                       #define patch 1
+                       #if (( HIREDIS_MAJOR > major ) || \
+                         (( HIREDIS_MAJOR == major ) && ( HIREDIS_MINOR > minor )) || \
+                         (( HIREDIS_MAJOR == major ) && ( HIREDIS_MINOR == minor ) && ( HIREDIS_PATCH >= patch ))) \
+                       /* OK */
+                       #else
+                       # error Hiredis_ssl version must be >= major.minor.path
+                       #endif
+                    ]]
+                )],
+                [],
+                [AC_MSG_ERROR([hiredis_ssl version must be >= 0.10.1])]
+            )],
+            [AC_MSG_WARN([hiredis_ssl not found, no TLS support in hiredis])]
+        )]
+    )
 fi
 
 if test "x$enable_imhiredis" = "xyes" ; then
     PKG_CHECK_MODULES(LIBEVENT, [libevent >= 2.0, libevent_pthreads],
         # libevent found
         [
-            HIREDIS_LIBS="$HIREDIS_LIBS -levent -levent_pthreads"
+            HIREDIS_LIBS="$HIREDIS_LIBS $HIREDIS_SSL_LIBS -levent -levent_pthreads"
         ],
         # libevent not found
         [AC_MSG_ERROR([no libevent >= 2.0 found with pthreads support, imhiredis cannot use pub/sub])])
+
 fi
 
 if test "x$enable_imhiredis" = "xyes" || test "x$enable_omhiredis" = "xyes"; then
