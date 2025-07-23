@@ -41,7 +41,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #if defined(__FreeBSD__)
-#include <unistd.h>
+	#include <unistd.h>
 #endif
 #include <json.h>
 #include <zlib.h>
@@ -60,7 +60,7 @@
 #include "dirty.h"
 
 #ifndef O_LARGEFILE
-#define O_LARGEFILE 0
+	#define O_LARGEFILE 0
 #endif
 
 MODULE_TYPE_OUTPUT
@@ -69,11 +69,9 @@ MODULE_CNFNAME("omsentinel")
 
 /* internal structures */
 DEF_OMOD_STATIC_DATA
-DEFobjCurrIf(prop)
-	DEFobjCurrIf(ruleset)
-		DEFobjCurrIf(statsobj)
+DEFobjCurrIf(prop) DEFobjCurrIf(ruleset) DEFobjCurrIf(statsobj)
 
-			statsobj_t *httpStats;
+	statsobj_t *httpStats;
 STATSCOUNTER_DEF(ctrMessagesSubmitted, mutCtrMessagesSubmitted);   // Number of message submitted to module
 STATSCOUNTER_DEF(ctrMessagesSuccess, mutCtrMessagesSuccess);	   // Number of messages successfully sent
 STATSCOUNTER_DEF(ctrMessagesFail, mutCtrMessagesFail);			   // Number of messages that failed to send
@@ -94,15 +92,6 @@ static int omsentinelInstancesCnt = 0;
 #define HTTP_HEADER_CONTENT_KAFKA "Content-Type: application/vnd.kafka.v1+json"
 #define HTTP_HEADER_ENCODING_GZIP "Content-Encoding: gzip"
 #define HTTP_HEADER_EXPECT_EMPTY "Expect:"
-
-#define VALID_BATCH_FORMATS "newline jsonarray kafkarest lokirest"
-typedef enum batchFormat_e
-{
-	FMT_NEWLINE,
-	FMT_JSONARRAY,
-	FMT_KAFKAREST,
-	FMT_LOKIREST
-} batchFormat_t;
 
 /* REST API uses this URL:
  * https://<hostName>:<restPort>/restPath
@@ -125,7 +114,7 @@ typedef struct instanceConf_s
 	uchar *token;
 	uchar *baseURL;
 	uchar *authParams; // auth purpose
-	int fdErrFile; /* error file fd or -1 if not open */
+	int fdErrFile;	   /* error file fd or -1 if not open */
 	pthread_mutex_t mutErrFile;
 	long healthCheckTimeout;
 	long restPathTimeout;
@@ -138,9 +127,6 @@ typedef struct instanceConf_s
 	uchar *tplName;
 	uchar *errorFile;
 	sbool batchMode;
-	uchar *batchFormatName;
-	batchFormat_t batchFormat;
-	sbool bFreeBatchFormatName;
 	size_t maxBatchBytes;
 	size_t maxBatchSize;
 	sbool compress;
@@ -229,7 +215,6 @@ static struct cnfparamdescr actpdescr[] = {
 	{"proxyhost", eCmdHdlrString, 0},
 	{"proxyport", eCmdHdlrInt, 0},
 	{"batch", eCmdHdlrBinary, 0},
-	{"batch.format", eCmdHdlrGetWord, 0},
 	{"batch.maxbytes", eCmdHdlrSize, 0},
 	{"batch.maxsize", eCmdHdlrSize, 0},
 	{"compress", eCmdHdlrBinary, 0},
@@ -276,175 +261,169 @@ static rsRetVal ATTR_NONNULL()
 	appendCompressCtx(wrkrInstanceData_t *pWrkrData, uchar *srcBuf, size_t srcLen);
 
 BEGINcreateInstance
-	printf("BEGINcreateInstance\n");
-CODESTARTcreateInstance
+	CODESTARTcreateInstance
 	pData->fdErrFile = -1;
-pthread_mutex_init(&pData->mutErrFile, NULL);
-pData->caCertFile = NULL;
-pData->myCertFile = NULL;
-pData->myPrivKeyFile = NULL;
-pData->ratelimiter = NULL;
-pData->retryRulesetName = NULL;
-pData->retryRuleset = NULL;
+	pthread_mutex_init(&pData->mutErrFile, NULL);
+	pData->caCertFile = NULL;
+	pData->myCertFile = NULL;
+	pData->myPrivKeyFile = NULL;
+	pData->ratelimiter = NULL;
+	pData->retryRulesetName = NULL;
+	pData->retryRuleset = NULL;
 ENDcreateInstance
 
-	BEGINcreateWrkrInstance
-		printf("BEGINcreateWrkrInstance\n");
-uchar **batchData;
-CODESTARTcreateWrkrInstance
+BEGINcreateWrkrInstance 
+	uchar **batchData;
+	CODESTARTcreateWrkrInstance
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
-pWrkrData->curlHeader = NULL;
-pWrkrData->curlPostHandle = NULL;
-pWrkrData->curlCheckConnHandle = NULL;
-pWrkrData->serverIndex = 0;
-pWrkrData->httpStatusCode = 0;
-pWrkrData->restURL = NULL;
-pWrkrData->bzInitDone = 0;
-if (pData->batchMode)
-{
-	pWrkrData->batch.nmemb = 0;
-	pWrkrData->batch.sizeBytes = 0;
-	batchData = (uchar **)malloc(pData->maxBatchSize * sizeof(uchar *));
-	if (batchData == NULL)
+	pWrkrData->curlHeader = NULL;
+	pWrkrData->curlPostHandle = NULL;
+	pWrkrData->curlCheckConnHandle = NULL;
+	pWrkrData->serverIndex = 0;
+	pWrkrData->httpStatusCode = 0;
+	pWrkrData->restURL = NULL;
+	pWrkrData->bzInitDone = 0;
+	if (pData->batchMode)
 	{
-		LogError(0, RS_RET_OUT_OF_MEMORY,
-				 "omsentinel: cannot allocate memory for batch queue turning off batch mode\n");
-		pData->batchMode = 0; /* at least it works */
+		pWrkrData->batch.nmemb = 0;
+		pWrkrData->batch.sizeBytes = 0;
+		batchData = (uchar **)malloc(pData->maxBatchSize * sizeof(uchar *));
+		if (batchData == NULL)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY,
+					"omsentinel: cannot allocate memory for batch queue turning off batch mode\n");
+			pData->batchMode = 0; /* at least it works */
+		}
+		else
+		{
+			pWrkrData->batch.data = batchData;
+			pWrkrData->batch.restPath = NULL;
+		}
+	}
+
+	// Log ingestion config parsing
+	if (pData->dce && pData->dcr && pData->stream_name)
+	{
+		if (asprintf((char **)&pData->baseURL, "https://%s", pData->dce) < 0)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for base URL\n");
+			ABORT_FINALIZE(RS_RET_ERR);
+		}
+		if (asprintf((char **)&pData->restPath, "/dataCollectionRules/%s/streams/%s?api-version=2023-01-01", pData->dcr, pData->stream_name) < 0)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for rest path\n");
+			ABORT_FINALIZE(RS_RET_ERR);
+		}
 	}
 	else
 	{
-		pWrkrData->batch.data = batchData;
-		pWrkrData->batch.restPath = NULL;
-	}
-}
-
-// Log ingestion config parsing
-if (pData->dce && pData->dcr && pData->stream_name)
-{
-	if(asprintf((char**)&pData->baseURL, "https://%s", pData->dce) < 0){
-		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for base URL\n");
+		LogError(0, RS_RET_PARAM_ERROR,
+				"omsentinel: Parameters missings 'dcr, dce, stream_name'");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
-	if(asprintf((char**)&pData->restPath, "/dataCollectionRules/%s/streams/%s?api-version=2023-01-01", pData->dcr, pData->stream_name)< 0){
-		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for rest path\n");
-		ABORT_FINALIZE(RS_RET_ERR);
+
+	// Authentification
+	if (pData->scope && pData->client_secret && pData->client_id && pData->grant_type && pData->tenant_id)
+	{
+		if (asprintf((char **)&pData->apiRestAuth, "https://login.microsoftonline.com/%s/oauth2/v2.0/token", pData->tenant_id) < 0)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth api\n");
+			ABORT_FINALIZE(RS_RET_ERR);
+		}
+
+		if (asprintf((char **)&pData->authParams, "scope=%s&client_secret=%s&client_id=%s&grant_type=%s", pData->scope, pData->client_secret, pData->client_id, pData->grant_type) < 0)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth params\n");
+			ABORT_FINALIZE(RS_RET_ERR);
+		}
+
+		curlAuth(pWrkrData, pData->authParams);
 	}
-}
-else
-{
-	LogError(0, RS_RET_PARAM_ERROR,
-		   "omsentinel: Parameters missings 'dcr, dce, stream_name'");
-		   ABORT_FINALIZE(RS_RET_ERR);
-	
-}
-
-//Authentification
-if (pData->scope && pData->client_secret && pData->client_id && pData->grant_type && pData->tenant_id)
-{
-	if(asprintf((char**)&pData->apiRestAuth, "https://login.microsoftonline.com/%s/oauth2/v2.0/token", pData->tenant_id) < 0){
-		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth api\n");
-		ABORT_FINALIZE(RS_RET_ERR);
+	else
+	{
+		LogError(0, RS_RET_PARAM_ERROR, "parameters missings 'scope, client_secret, client_id, grant_type, tenant_id'");
 	}
-	
-	if(asprintf((char**)&pData->authParams, "scope=%s&client_secret=%s&client_id=%s&grant_type=%s", pData->scope, pData->client_secret, pData->client_id, pData->grant_type) < 0){
-		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth params\n");
-		ABORT_FINALIZE(RS_RET_ERR);
-	}
-	
-	curlAuth(pWrkrData, pData->authParams);
-}
-else
-{
-	LogError(0, RS_RET_PARAM_ERROR, "parameters missings 'scope, client_secret, client_id, grant_type, tenant_id'");
-}
 
+	initCompressCtx(pWrkrData);
+	iRet = curlSetup(pWrkrData);
 
-
-
-initCompressCtx(pWrkrData);
-iRet = curlSetup(pWrkrData);
-
-finalize_it :
-
-	ENDcreateWrkrInstance
+finalize_it:
+ENDcreateWrkrInstance
 
 BEGINisCompatibleWithFeature
-CODESTARTisCompatibleWithFeature if (eFeat == sFEATURERepeatedMsgReduction)
-				iRet = RS_RET_OK;
+	CODESTARTisCompatibleWithFeature 
+	if (eFeat == sFEATURERepeatedMsgReduction)
+		iRet = RS_RET_OK;
 ENDisCompatibleWithFeature
 
-	BEGINfreeInstance
-		printf("BEGINfreeInstance\n");
-CODESTARTfreeInstance if (pData->fdErrFile != -1)
-	close(pData->fdErrFile);
-pthread_mutex_destroy(&pData->mutErrFile);
-free(pData->httpHeader);
-free(pData->authBuf);
-free(pData->headerBuf);
-free(pData->restPath);
-free(pData->client_id);		// sentinel auth
-free(pData->client_secret); // sentinel auth
-free(pData->scope);			// sentinel auth
-free(pData->grant_type);	// sentinel auth
-free(pData->tenant_id);		// sentinel tenant_id
-free(pData->dce);
-free(pData->dcr);
-free(pData->stream_name);
-free(pData->baseURL);
-free(pData->authReply);
-free(pData->authParams);
-free(pData->token);
-free(pData->apiRestAuth);
-free(pData->proxyHost);
-free(pData->tplName);
-free(pData->errorFile);
-free(pData->caCertFile);
-free(pData->myCertFile);
-free(pData->myPrivKeyFile);
-free(pData->httpRetryCodes);
-free(pData->retryRulesetName);
-free(pData->ignorableCodes);
-if (pData->ratelimiter != NULL)
-	ratelimitDestruct(pData->ratelimiter);
-if (pData->bFreeBatchFormatName)
-	free(pData->batchFormatName);
-if (pData->stats)
-{
-	statsobj.Destruct(&pData->stats);
-}
-free(pData->statsName);
-ENDfreeInstance
+BEGINfreeInstance
+	CODESTARTfreeInstance 
+	if (pData->fdErrFile != -1)
+		close(pData->fdErrFile);
+	pthread_mutex_destroy(&pData->mutErrFile);
+	free(pData->httpHeader);
+	free(pData->authBuf);
+	free(pData->headerBuf);
+	free(pData->restPath);
+	free(pData->client_id);		// sentinel auth
+	free(pData->client_secret); // sentinel auth
+	free(pData->scope);			// sentinel auth
+	free(pData->grant_type);	// sentinel auth
+	free(pData->tenant_id);		// sentinel tenant_id
+	free(pData->dce);
+	free(pData->dcr);
+	free(pData->stream_name);
+	free(pData->baseURL);
+	free(pData->authReply);
+	free(pData->authParams);
+	free(pData->token);
+	free(pData->apiRestAuth);
+	free(pData->proxyHost);
+	free(pData->tplName);
+	free(pData->errorFile);
+	free(pData->caCertFile);
+	free(pData->myCertFile);
+	free(pData->myPrivKeyFile);
+	free(pData->httpRetryCodes);
+	free(pData->retryRulesetName);
+	free(pData->ignorableCodes);
+	if (pData->ratelimiter != NULL)
+		ratelimitDestruct(pData->ratelimiter);
+	if (pData->stats)
+	{
+		statsobj.Destruct(&pData->stats);
+	}
+	free(pData->statsName);
+	ENDfreeInstance
 
-	BEGINfreeWrkrInstance
-		printf("BEGINfreeWrkrInstance\n");
-CODESTARTfreeWrkrInstance
-	curlCleanup(pWrkrData);
+		BEGINfreeWrkrInstance
+			CODESTARTfreeWrkrInstance
+				curlCleanup(pWrkrData);
 
-free(pWrkrData->restURL);
-pWrkrData->restURL = NULL;
+	free(pWrkrData->restURL);
+	pWrkrData->restURL = NULL;
 
-free(pWrkrData->batch.data);
-pWrkrData->batch.data = NULL;
+	free(pWrkrData->batch.data);
+	pWrkrData->batch.data = NULL;
 
-if (pWrkrData->batch.restPath != NULL)
-{
-	free(pWrkrData->batch.restPath);
-	pWrkrData->batch.restPath = NULL;
-}
+	if (pWrkrData->batch.restPath != NULL)
+	{
+		free(pWrkrData->batch.restPath);
+		pWrkrData->batch.restPath = NULL;
+	}
 
-if (pWrkrData->bzInitDone)
-	deflateEnd(&pWrkrData->zstrm);
-freeCompressCtx(pWrkrData);
+	if (pWrkrData->bzInitDone)
+		deflateEnd(&pWrkrData->zstrm);
+	freeCompressCtx(pWrkrData);
 
 ENDfreeWrkrInstance
 
-	BEGINdbgPrintInstInfo
-		printf("BEGINdbgPrintInstInfo\n");
-CODESTARTdbgPrintInstInfo
-	ENDdbgPrintInstInfo
+BEGINdbgPrintInstInfo
+	CODESTARTdbgPrintInstInfo
+ENDdbgPrintInstInfo
 
-	/* http POST result string ... useful for debugging */
-	static size_t
+/* http POST result string ... useful for debugging */
+static size_t
 	curlResult(void *ptr, size_t size, size_t nmemb, void *userdata)
 {
 	char *p = (char *)ptr;
@@ -465,15 +444,12 @@ CODESTARTdbgPrintInstInfo
 }
 
 BEGINtryResume
-	printf("#BEGINtryResume#\n");
-CODESTARTtryResume
-	printf("CODESTARTtryResume\n");
-DBGPRINTF("omsentinel: tryResume called\n");
-
+	CODESTARTtryResume
+	DBGPRINTF("omsentinel: tryResume called\n");
 ENDtryResume
 
-	/* get the current index and type for this message */
-	static void ATTR_NONNULL(1)
+/* get the current index and type for this message */
+static void ATTR_NONNULL(1)
 		getRestPath(const instanceData *const pData, uchar **const tpls,
 					uchar **const restPath)
 {
@@ -667,7 +643,6 @@ finalize_it:
 	free(rendered);
 	RETiRet;
 }
-
 
 static rsRetVal
 queueBatchOnRetryRuleset(wrkrInstanceData_t *const pWrkrData, instanceData *const pData)
@@ -1043,25 +1018,8 @@ static rsRetVal ATTR_NONNULL()
 
 	if (pWrkrData->pData->batchMode)
 	{
-		// If in batch mode, use the approprate content type header for the format,
-		// defaulting to text/plain with newline
-		switch (pWrkrData->pData->batchFormat)
-		{
-		case FMT_JSONARRAY:
-			slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_JSON);
-			break;
-		case FMT_KAFKAREST:
-			slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_KAFKA);
-			break;
-		case FMT_NEWLINE:
-			slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_TEXT);
-			break;
-		case FMT_LOKIREST:
-			slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_JSON);
-			break;
-		default:
-			slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_TEXT);
-		}
+
+		slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_JSON);
 	}
 	else
 	{
@@ -1181,7 +1139,8 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 
 	// httpHeaders
 
-	if(asprintf((char**)&pData->httpHeader, (char *)pData->authorizationHeader, pData->token) < 0){
+	if (asprintf((char **)&pData->httpHeader, (char *)pData->authorizationHeader, pData->token) < 0)
+	{
 		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for http header\n");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
@@ -1292,132 +1251,6 @@ finalize_it:
 	RETiRet;
 }
 
-/* Build a JSON batch that conforms to the Kafka Rest Proxy format.
- * See https://docs.confluent.io/current/kafka-rest/docs/quickstart.html for more info.
- * Want {"records": [{"value": "message1"}, {"value": "message2"}]}
- */
-static rsRetVal
-serializeBatchKafkaRest(wrkrInstanceData_t *pWrkrData, char **batchBuf)
-{
-	fjson_object *batchArray = NULL;
-	fjson_object *recordObj = NULL;
-	fjson_object *valueObj = NULL;
-	fjson_object *msgObj = NULL;
-
-	size_t numMessages = pWrkrData->batch.nmemb;
-	size_t sizeTotal = pWrkrData->batch.sizeBytes + numMessages + 1; // messages + brackets + commas
-	DBGPRINTF("omsentinel: serializeBatchKafkaRest numMessages=%zd sizeTotal=%zd\n", numMessages, sizeTotal);
-
-	DEFiRet;
-
-	batchArray = fjson_object_new_array();
-	if (batchArray == NULL)
-	{
-		LogError(0, RS_RET_ERR, "omsentinel: serializeBatchKafkaRest failed to create array");
-		ABORT_FINALIZE(RS_RET_ERR);
-	}
-
-	for (size_t i = 0; i < numMessages; i++)
-	{
-		valueObj = fjson_object_new_object();
-		if (valueObj == NULL)
-		{
-			fjson_object_put(batchArray); // cleanup
-			LogError(0, RS_RET_ERR, "omsentinel: serializeBatchKafkaRest failed to create value object");
-			ABORT_FINALIZE(RS_RET_ERR);
-		}
-
-		msgObj = fjson_tokener_parse((char *)pWrkrData->batch.data[i]);
-		if (msgObj == NULL)
-		{
-			LogError(0, NO_ERRCODE,
-					 "omsentinel: serializeBatchKafkaRest failed to parse %s as json ignoring it",
-					 pWrkrData->batch.data[i]);
-			continue;
-		}
-		fjson_object_object_add(valueObj, "value", msgObj);
-		fjson_object_array_add(batchArray, valueObj);
-	}
-
-	recordObj = fjson_object_new_object();
-	if (recordObj == NULL)
-	{
-		fjson_object_put(batchArray); // cleanup
-		LogError(0, RS_RET_ERR, "omsentinel: serializeBatchKafkaRest failed to create record object");
-		ABORT_FINALIZE(RS_RET_ERR);
-	}
-
-	fjson_object_object_add(recordObj, "records", batchArray);
-
-	const char *batchString = fjson_object_to_json_string_ext(recordObj, FJSON_TO_STRING_PLAIN);
-	*batchBuf = strndup(batchString, strlen(batchString));
-
-finalize_it:
-	if (recordObj != NULL)
-	{
-		fjson_object_put(recordObj);
-		recordObj = NULL;
-	}
-
-	RETiRet;
-}
-
-static rsRetVal
-serializeBatchLokiRest(wrkrInstanceData_t *pWrkrData, char **batchBuf)
-{
-	fjson_object *batchArray = NULL;
-	fjson_object *recordObj = NULL;
-	fjson_object *msgObj = NULL;
-
-	size_t numMessages = pWrkrData->batch.nmemb;
-	size_t sizeTotal = pWrkrData->batch.sizeBytes + numMessages + 1; // messages + brackets + commas
-	DBGPRINTF("omsentinel: serializeBatchLokiRest numMessages=%zd sizeTotal=%zd\n", numMessages, sizeTotal);
-
-	DEFiRet;
-
-	batchArray = fjson_object_new_array();
-	if (batchArray == NULL)
-	{
-		LogError(0, RS_RET_ERR, "omsentinel: serializeBatchLokiRest failed to create array");
-		ABORT_FINALIZE(RS_RET_ERR);
-	}
-
-	for (size_t i = 0; i < numMessages; i++)
-	{
-		DBGPRINTF("omsentinel: serializeBatchLokiRest parsing message [%s]\n", (char *)pWrkrData->batch.data[i]);
-		msgObj = fjson_tokener_parse((char *)pWrkrData->batch.data[i]);
-		if (msgObj == NULL)
-		{
-			LogError(0, NO_ERRCODE,
-					 "omsentinel: serializeBatchLokiRest failed to parse %s as json ignoring it",
-					 pWrkrData->batch.data[i]);
-			continue;
-		}
-		fjson_object_array_add(batchArray, msgObj);
-	}
-
-	recordObj = fjson_object_new_object();
-	if (recordObj == NULL)
-	{
-		fjson_object_put(batchArray); // cleanup
-		LogError(0, RS_RET_ERR, "omsentinel: serializeBatchLokiRest failed to create record object");
-		ABORT_FINALIZE(RS_RET_ERR);
-	}
-
-	fjson_object_object_add(recordObj, "streams", batchArray);
-
-	const char *batchString = fjson_object_to_json_string_ext(recordObj, FJSON_TO_STRING_PLAIN);
-	*batchBuf = strndup(batchString, strlen(batchString));
-
-finalize_it:
-	if (recordObj != NULL)
-	{
-		fjson_object_put(recordObj);
-		recordObj = NULL;
-	}
-
-	RETiRet;
-}
 /* Build a JSON batch by placing each element in an array.
  */
 static rsRetVal
@@ -1463,50 +1296,6 @@ finalize_it:
 	RETiRet;
 }
 
-/* Build a batch by joining each element with a newline character.
- */
-static rsRetVal
-serializeBatchNewline(wrkrInstanceData_t *pWrkrData, char **batchBuf)
-{
-	DEFiRet;
-	size_t numMessages = pWrkrData->batch.nmemb;
-	size_t sizeTotal = pWrkrData->batch.sizeBytes + numMessages; // message + newline + null term
-	int r = 0;
-
-	DBGPRINTF("omsentinel: serializeBatchNewline numMessages=%zd sizeTotal=%zd\n", numMessages, sizeTotal);
-
-	es_str_t *batchString = es_newStr(1024);
-
-	if (batchString == NULL)
-		ABORT_FINALIZE(RS_RET_ERR);
-
-	for (size_t i = 0; i < numMessages; i++)
-	{
-		size_t nToCopy = ustrlen(pWrkrData->batch.data[i]);
-		if (r == 0)
-			r = es_addBuf(&batchString, (char *)pWrkrData->batch.data[i], nToCopy);
-		if (i == numMessages - 1)
-			break;
-		if (r == 0)
-			r = es_addChar(&batchString, '\n');
-	}
-
-	if (r == 0)
-		*batchBuf = (char *)es_str2cstr(batchString, NULL);
-
-	if (r != 0 || *batchBuf == NULL)
-	{
-		LogError(0, RS_RET_ERR, "omsentinel: serializeBatchNewline failed to build batch string");
-		ABORT_FINALIZE(RS_RET_ERR);
-	}
-
-finalize_it:
-	if (batchString != NULL)
-		es_deleteStr(batchString);
-
-	RETiRet;
-}
-
 /* Return the final batch size in bytes for each serialization method.
  * Used to decide if a batch should be flushed early.
  */
@@ -1517,35 +1306,9 @@ computeBatchSize(wrkrInstanceData_t *pWrkrData)
 	size_t sizeBytes = pWrkrData->batch.sizeBytes;
 	size_t numMessages = pWrkrData->batch.nmemb;
 
-	switch (pWrkrData->pData->batchFormat)
-	{
-	case FMT_JSONARRAY:
-		// square brackets, commas between each message
-		// 2 + numMessages - 1 = numMessages + 1
-		extraBytes = numMessages > 0 ? numMessages + 1 : 2;
-		break;
-	case FMT_KAFKAREST:
-		// '{}', '[]', '"records":'= 2 + 2 + 10 = 14
-		// '{"value":}' for each message = n * 10
-		// numMessages == 0 handled implicitly in multiplication
-		extraBytes = (numMessages * 10) + 14;
-		break;
-	case FMT_NEWLINE:
-		// newlines between each message
-		extraBytes = numMessages > 0 ? numMessages - 1 : 0;
-		break;
-	case FMT_LOKIREST:
-		// {"streams":[ '{}', '[]', '"streams":' = 14
-		//    {"stream": {key:value}..., "values":[[timestamp: msg1]]},
-		//    {"stream": {key:value}..., "values":[[timestamp: msg2]]}
-		// ]}
-		// message (11) * numMessages + header ( 16 )
-		extraBytes = (numMessages * 2) + 14;
-		break;
-	default:
-		// newlines between each message
-		extraBytes = numMessages > 0 ? numMessages - 1 : 0;
-	}
+	// square brackets, commas between each message
+	// 2 + numMessages - 1 = numMessages + 1
+	extraBytes = numMessages > 0 ? numMessages + 1 : 2;
 
 	return sizeBytes + extraBytes + 1; // plus a null
 }
@@ -1589,23 +1352,7 @@ submitBatch(wrkrInstanceData_t *pWrkrData, uchar **tpls)
 	DEFiRet;
 	char *batchBuf = NULL;
 
-	switch (pWrkrData->pData->batchFormat)
-	{
-	case FMT_JSONARRAY:
-		iRet = serializeBatchJsonArray(pWrkrData, &batchBuf);
-		break;
-	case FMT_KAFKAREST:
-		iRet = serializeBatchKafkaRest(pWrkrData, &batchBuf);
-		break;
-	case FMT_LOKIREST:
-		iRet = serializeBatchLokiRest(pWrkrData, &batchBuf);
-		break;
-	case FMT_NEWLINE:
-		iRet = serializeBatchNewline(pWrkrData, &batchBuf);
-		break;
-	default:
-		iRet = serializeBatchNewline(pWrkrData, &batchBuf);
-	}
+	iRet = serializeBatchJsonArray(pWrkrData, &batchBuf);
 
 	if (iRet != RS_RET_OK || batchBuf == NULL)
 		ABORT_FINALIZE(iRet);
@@ -1622,119 +1369,121 @@ finalize_it:
 }
 
 BEGINbeginTransaction
-	printf("BEGINbeginTransaction\n");
-CODESTARTbeginTransaction instanceData *pData = pWrkrData->pData;
+	CODESTARTbeginTransaction 
+	instanceData *pData = pWrkrData->pData;
 
-if (time(NULL) >= pData->authExp && pData->token)
-{
-	if (pData->authReply)
-		free(pData->authReply);
-	if (pData->token)
-		free(pData->token);
-	if (pData->httpHeader)
-		free(pData->httpHeader);
-
-	// nullify to prevent dangling pointers
-	pData->token = NULL;
-	pData->authReply = NULL;
-	pData->httpHeader = NULL;
-
-	curlAuth(pWrkrData, pData->authParams);
-}
-
-if (!pWrkrData->pData->batchMode)
-{
-	FINALIZE;
-}
-
-initializeBatch(pWrkrData);
-finalize_it : ENDbeginTransaction
-
-				  BEGINdoAction
-					  printf("BEGINdoAction\n");
-size_t nBytes;
-sbool submit;
-CODESTARTdoAction instanceData *const pData = pWrkrData->pData;
-
-STATSCOUNTER_INC(ctrMessagesSubmitted, mutCtrMessagesSubmitted);
-
-if (pData->token && pData->dce && pData->dcr && pData->stream_name)
-{
-	if (pWrkrData->pData->batchMode)
+	if (time(NULL) >= pData->authExp && pData->token)
 	{
+		if (pData->authReply)
+			free(pData->authReply);
+		if (pData->token)
+			free(pData->token);
+		if (pData->httpHeader)
+			free(pData->httpHeader);
 
-		/* If the maxbatchsize is 1, then build and immediately post a batch with 1 element.
-		 * This mode will play nicely with rsyslog's action.resumeRetryCount logic.
-		 */
-		if (pWrkrData->pData->maxBatchSize == 1)
+		// nullify to prevent dangling pointers
+		pData->token = NULL;
+		pData->authReply = NULL;
+		pData->httpHeader = NULL;
+
+		curlAuth(pWrkrData, pData->authParams);
+	}
+
+	if (!pWrkrData->pData->batchMode)
+	{
+		FINALIZE;
+	}
+
+	initializeBatch(pWrkrData);
+finalize_it : 
+ENDbeginTransaction
+
+BEGINdoAction
+	size_t nBytes;
+	sbool submit;
+	CODESTARTdoAction 
+	instanceData *const pData = pWrkrData->pData;
+
+	STATSCOUNTER_INC(ctrMessagesSubmitted, mutCtrMessagesSubmitted);
+
+	if (pData->token && pData->dce && pData->dcr && pData->stream_name)
+	{
+		if (pWrkrData->pData->batchMode)
 		{
-			initializeBatch(pWrkrData);
+
+			/* If the maxbatchsize is 1, then build and immediately post a batch with 1 element.
+			* This mode will play nicely with rsyslog's action.resumeRetryCount logic.
+			*/
+			if (pWrkrData->pData->maxBatchSize == 1)
+			{
+				initializeBatch(pWrkrData);
+				CHKiRet(buildBatch(pWrkrData, ppString[0]));
+				CHKiRet(submitBatch(pWrkrData, ppString));
+				FINALIZE;
+			}
+
+			/* We should submit if any of these conditions are true
+			* 1. Total batch size > pWrkrData->pData->maxBatchSize
+			* 2. Total bytes > pWrkrData->pData->maxBatchBytes
+			*/
+			nBytes = ustrlen((char *)ppString[0]) - 1;
+			submit = 0;
+
+			if (pWrkrData->batch.nmemb >= pWrkrData->pData->maxBatchSize)
+			{
+				submit = 1;
+				DBGPRINTF("omsentinel: maxbatchsize limit reached submitting batch of %zd elements.\n",
+						pWrkrData->batch.nmemb);
+			}
+			else if (computeBatchSize(pWrkrData) + nBytes > pWrkrData->pData->maxBatchBytes)
+			{
+				submit = 1;
+				DBGPRINTF("omsentinel: maxbytes limit reached submitting partial batch of %zd elements.\n",
+						pWrkrData->batch.nmemb);
+			}
+
+			if (submit)
+			{
+				CHKiRet(submitBatch(pWrkrData, ppString));
+				initializeBatch(pWrkrData);
+			}
+
 			CHKiRet(buildBatch(pWrkrData, ppString[0]));
-			CHKiRet(submitBatch(pWrkrData, ppString));
-			FINALIZE;
+
+			/* If there is only one item in the batch, all previous items have been
+			* submitted or this is the first item for this transaction. Return previous
+			* committed so that all items leading up to the current (exclusive)
+			* are not replayed should a failure occur anywhere else in the transaction. */
+			iRet = pWrkrData->batch.nmemb == 1 ? RS_RET_PREVIOUS_COMMITTED : RS_RET_DEFER_COMMIT;
 		}
-
-		/* We should submit if any of these conditions are true
-		 * 1. Total batch size > pWrkrData->pData->maxBatchSize
-		 * 2. Total bytes > pWrkrData->pData->maxBatchBytes
-		 */
-		nBytes = ustrlen((char *)ppString[0]) - 1;
-		submit = 0;
-
-		if (pWrkrData->batch.nmemb >= pWrkrData->pData->maxBatchSize)
+		else
 		{
-			submit = 1;
-			DBGPRINTF("omsentinel: maxbatchsize limit reached submitting batch of %zd elements.\n",
-					  pWrkrData->batch.nmemb);
+			CHKiRet(curlPost(pWrkrData, ppString[0], strlen((char *)ppString[0]), ppString, 1));
 		}
-		else if (computeBatchSize(pWrkrData) + nBytes > pWrkrData->pData->maxBatchBytes)
-		{
-			submit = 1;
-			DBGPRINTF("omsentinel: maxbytes limit reached submitting partial batch of %zd elements.\n",
-					  pWrkrData->batch.nmemb);
-		}
-
-		if (submit)
-		{
-			CHKiRet(submitBatch(pWrkrData, ppString));
-			initializeBatch(pWrkrData);
-		}
-
-		CHKiRet(buildBatch(pWrkrData, ppString[0]));
-
-		/* If there is only one item in the batch, all previous items have been
-		 * submitted or this is the first item for this transaction. Return previous
-		 * committed so that all items leading up to the current (exclusive)
-		 * are not replayed should a failure occur anywhere else in the transaction. */
-		iRet = pWrkrData->batch.nmemb == 1 ? RS_RET_PREVIOUS_COMMITTED : RS_RET_DEFER_COMMIT;
 	}
 	else
 	{
-		CHKiRet(curlPost(pWrkrData, ppString[0], strlen((char *)ppString[0]), ppString, 1));
+		LogError(0, RS_RET_ERR, "omsentinel: an error occured, aborting...");
+		ABORT_FINALIZE(RS_RET_ERR);
 	}
-}
-else
-{
-	LogError(0, RS_RET_ERR, "omsentinel: an error occured, aborting...");
-	ABORT_FINALIZE(RS_RET_ERR);
-}
 
 finalize_it : 
 ENDdoAction
 
 BEGINendTransaction
-CODESTARTendTransaction
-/* End Transaction only if batch data is not empty */
-if (pWrkrData->batch.nmemb > 0)
-{
-	CHKiRet(submitBatch(pWrkrData, NULL));
-}
-else
-{
-	dbgprintf("omsentinel: endTransaction, pWrkrData->batch.nmemb = 0, "
-			  "nothing to send. \n");
-}
-finalize_it : ENDendTransaction
+	CODESTARTendTransaction
+	/* End Transaction only if batch data is not empty */
+	if (pWrkrData->batch.nmemb > 0)
+	{
+		CHKiRet(submitBatch(pWrkrData, NULL));
+	}
+	else
+	{
+		dbgprintf("omsentinel: endTransaction, pWrkrData->batch.nmemb = 0, "
+				"nothing to send. \n");
+	}
+finalize_it: 
+ENDendTransaction
 
 			  static void
 			  ATTR_NONNULL()
@@ -1846,9 +1595,7 @@ finalize_it:
 	RETiRet;
 }
 
-static void ATTR_NONNULL()
-	curlCleanup(wrkrInstanceData_t *const pWrkrData)
-{
+static void ATTR_NONNULL() curlCleanup(wrkrInstanceData_t *const pWrkrData){
 	if (pWrkrData->curlHeader != NULL)
 	{
 		curl_slist_free_all(pWrkrData->curlHeader);
@@ -1892,9 +1639,6 @@ static void ATTR_NONNULL()
 	pData->proxyHost = NULL;
 	pData->proxyPort = 0;
 	pData->batchMode = 0;
-	pData->batchFormatName = (uchar *)"jsonarray";
-	pData->batchFormat = FMT_JSONARRAY;
-	pData->bFreeBatchFormatName = 0;
 	pData->maxBatchBytes = 10485760; // i.e. 10 MB Is the default max message size for AWS API Gateway
 	pData->maxBatchSize = 1;		 // 100 messages
 	pData->compress = 0;			 // off
@@ -1920,25 +1664,23 @@ static void ATTR_NONNULL()
 	++omsentinelInstancesCnt;
 }
 
-BEGINnewActInst
-	printf("BEGINnewActInst\n");
-struct cnfparamvals *pvals;
-int i;
-int iNumTpls = 1;
-FILE *fp;
-char errStr[1024];
-char *batchFormatName;
-int compressionLevel = -1;
-CODESTARTnewActInst if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL)
-{
+BEGINnewActInst struct cnfparamvals *pvals;
+	int i;
+	int iNumTpls = 1;
+	FILE *fp;
+	char errStr[1024];
+	int compressionLevel = -1;
+	CODESTARTnewActInst 
+	if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL)
+	{
 	ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
-}
+	}
 
-CHKiRet(createInstance(&pData));
-setInstParamDefaults(pData);
+	CHKiRet(createInstance(&pData));
+	setInstParamDefaults(pData);
 
-for (i = 0; i < actpblk.nParams; ++i)
-{
+	for (i = 0; i < actpblk.nParams; ++i)
+	{
 	if (!pvals[i].bUsed)
 		continue;
 	if (!strcmp(actpblk.descr[i].name, "dce"))
@@ -2001,36 +1743,6 @@ for (i = 0; i < actpblk.nParams; ++i)
 	{
 		pData->batchMode = pvals[i].val.d.n;
 	}
-	else if (!strcmp(actpblk.descr[i].name, "batch.format"))
-	{
-		batchFormatName = es_str2cstr(pvals[i].val.d.estr, NULL);
-		if (strstr(VALID_BATCH_FORMATS, batchFormatName) != NULL)
-		{
-			pData->batchFormatName = (uchar *)batchFormatName;
-			pData->bFreeBatchFormatName = 1;
-			if (!strcmp(batchFormatName, "newline"))
-			{
-				pData->batchFormat = FMT_NEWLINE;
-			}
-			else if (!strcmp(batchFormatName, "jsonarray"))
-			{
-				pData->batchFormat = FMT_JSONARRAY;
-			}
-			else if (!strcmp(batchFormatName, "kafkarest"))
-			{
-				pData->batchFormat = FMT_KAFKAREST;
-			}
-			else if (!strcmp(batchFormatName, "lokirest"))
-			{
-				pData->batchFormat = FMT_LOKIREST;
-			}
-		}
-		else
-		{
-			LogError(0, NO_ERRCODE, "error: 'batch.format' %s unknown defaulting to 'newline'",
-					 batchFormatName);
-		}
-	}
 	else if (!strcmp(actpblk.descr[i].name, "batch.maxbytes"))
 	{
 		pData->maxBatchBytes = (size_t)pvals[i].val.d.n;
@@ -2054,7 +1766,7 @@ for (i = 0; i < actpblk.nParams; ++i)
 		{
 			LogError(0, NO_ERRCODE, "omsentinel: invalid compress.level %d using default instead,"
 									"valid levels are -1 and 0-9",
-					 compressionLevel);
+						compressionLevel);
 		}
 	}
 	else if (!strcmp(actpblk.descr[i].name, "allowunsignedcerts"))
@@ -2077,8 +1789,8 @@ for (i = 0; i < actpblk.nParams; ++i)
 		{
 			rs_strerror_r(errno, errStr, sizeof(errStr));
 			LogError(0, RS_RET_NO_FILE_ACCESS,
-					 "error: 'tls.cacert' file %s couldn't be accessed: %s\n",
-					 pData->caCertFile, errStr);
+						"error: 'tls.cacert' file %s couldn't be accessed: %s\n",
+						pData->caCertFile, errStr);
 		}
 		else
 		{
@@ -2093,8 +1805,8 @@ for (i = 0; i < actpblk.nParams; ++i)
 		{
 			rs_strerror_r(errno, errStr, sizeof(errStr));
 			LogError(0, RS_RET_NO_FILE_ACCESS,
-					 "error: 'tls.mycert' file %s couldn't be accessed: %s\n",
-					 pData->myCertFile, errStr);
+						"error: 'tls.mycert' file %s couldn't be accessed: %s\n",
+						pData->myCertFile, errStr);
 		}
 		else
 		{
@@ -2109,8 +1821,8 @@ for (i = 0; i < actpblk.nParams; ++i)
 		{
 			rs_strerror_r(errno, errStr, sizeof(errStr));
 			LogError(0, RS_RET_NO_FILE_ACCESS,
-					 "error: 'tls.myprivkey' file %s couldn't be accessed: %s\n",
-					 pData->myPrivKeyFile, errStr);
+						"error: 'tls.myprivkey' file %s couldn't be accessed: %s\n",
+						pData->myPrivKeyFile, errStr);
 		}
 		else
 		{
@@ -2131,7 +1843,7 @@ for (i = 0; i < actpblk.nParams; ++i)
 			{
 				char *cstr = es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
 				LogError(0, RS_RET_NO_FILE_ACCESS,
-						 "error: 'httpRetryCode' '%s' is not a number - ignored\n", cstr);
+							"error: 'httpRetryCode' '%s' is not a number - ignored\n", cstr);
 				free(cstr);
 			}
 			else
@@ -2174,7 +1886,7 @@ for (i = 0; i < actpblk.nParams; ++i)
 			{
 				char *cstr = es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
 				LogError(0, RS_RET_NO_FILE_ACCESS,
-						 "error: 'httpIgnorableCodes' '%s' is not a number - ignored\n", cstr);
+							"error: 'httpIgnorableCodes' '%s' is not a number - ignored\n", cstr);
 				free(cstr);
 			}
 			else
@@ -2186,254 +1898,246 @@ for (i = 0; i < actpblk.nParams; ++i)
 	else
 	{
 		LogError(0, RS_RET_INTERNAL_ERROR, "omsentinel: program error, "
-										   "non-handled param '%s'",
-				 actpblk.descr[i].name);
+											"non-handled param '%s'",
+					actpblk.descr[i].name);
 	}
-}
+	}
 
-if (pData->proxyHost == NULL)
-{
-	const char *http_proxy;
-	if ((http_proxy = getenv("http_proxy")) == NULL)
+	if (pData->proxyHost == NULL)
 	{
-		http_proxy = getenv("HTTP_PROXY");
+		const char *http_proxy;
+		if ((http_proxy = getenv("http_proxy")) == NULL)
+		{
+			http_proxy = getenv("HTTP_PROXY");
+		}
+		if (http_proxy != NULL)
+		{
+			pData->proxyHost = ustrdup(http_proxy);
+		}
 	}
-	if (http_proxy != NULL)
+
+	DBGPRINTF("omsentinel: requesting %d templates\n", iNumTpls);
+	CODE_STD_STRING_REQUESTnewActInst(iNumTpls)
+
+		CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup((pData->tplName == NULL) ? " StdJSONFmt" : (char *)pData->tplName),
+							OMSR_NO_RQD_TPL_OPTS));
+
+	if (pData->retryFailures)
 	{
-		pData->proxyHost = ustrdup(http_proxy);
+		CHKiRet(ratelimitNew(&pData->ratelimiter, "omsentinel", NULL));
+		ratelimitSetLinuxLike(pData->ratelimiter, pData->ratelimitInterval, pData->ratelimitBurst);
+		ratelimitSetNoTimeCache(pData->ratelimiter);
 	}
-}
 
-DBGPRINTF("omsentinel: requesting %d templates\n", iNumTpls);
-CODE_STD_STRING_REQUESTnewActInst(iNumTpls)
+	if (!pData->statsName)
+	{
+		uchar pszAName[64];
+		snprintf((char *)pszAName, sizeof(pszAName), "omsentinel-%d", omsentinelInstancesCnt);
+		pData->statsName = ustrdup(pszAName);
+	}
+	// instantiate the stats object and add the counters
+	CHKiRet(statsobj.Construct(&pData->stats));
+	CHKiRet(statsobj.SetName(pData->stats, (uchar *)pData->statsName));
+	CHKiRet(statsobj.SetOrigin(pData->stats, (uchar *)"omsentinel"));
 
-	CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup((pData->tplName == NULL) ? " StdJSONFmt" : (char *)pData->tplName),
-						 OMSR_NO_RQD_TPL_OPTS));
+	STATSCOUNTER_INIT(pData->ctrHttpRequestsCount, pData->mutCtrHttpRequestsCount);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.count",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsCount));
 
+	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus0xx, pData->mutCtrHttpRequestsStatus0xx);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.0xx",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus0xx));
 
+	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus1xx, pData->mutCtrHttpRequestsStatus1xx);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.1xx",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus1xx));
 
-if (pData->retryFailures)
-{
-	CHKiRet(ratelimitNew(&pData->ratelimiter, "omsentinel", NULL));
-	ratelimitSetLinuxLike(pData->ratelimiter, pData->ratelimitInterval, pData->ratelimitBurst);
-	ratelimitSetNoTimeCache(pData->ratelimiter);
-}
+	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus2xx, pData->mutCtrHttpRequestsStatus2xx);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.2xx",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus2xx));
 
-if (!pData->statsName)
-{
-	uchar pszAName[64];
-	snprintf((char *)pszAName, sizeof(pszAName), "omsentinel-%d", omsentinelInstancesCnt);
-	pData->statsName = ustrdup(pszAName);
-}
-// instantiate the stats object and add the counters
-CHKiRet(statsobj.Construct(&pData->stats));
-CHKiRet(statsobj.SetName(pData->stats, (uchar *)pData->statsName));
-CHKiRet(statsobj.SetOrigin(pData->stats, (uchar *)"omsentinel"));
+	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus3xx, pData->mutCtrHttpRequestsStatus3xx);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.3xx",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus3xx));
 
-STATSCOUNTER_INIT(pData->ctrHttpRequestsCount, pData->mutCtrHttpRequestsCount);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.count",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsCount));
+	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus4xx, pData->mutCtrHttpRequestsStatus4xx);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.4xx",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus4xx));
 
-STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus0xx, pData->mutCtrHttpRequestsStatus0xx);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.0xx",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus0xx));
+	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus5xx, pData->mutCtrHttpRequestsStatus5xx);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.5xx",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus5xx));
 
-STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus1xx, pData->mutCtrHttpRequestsStatus1xx);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.1xx",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus1xx));
+	STATSCOUNTER_INIT(pData->httpRequestsBytes, pData->mutHttpRequestsBytes);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.bytes",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->httpRequestsBytes));
 
-STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus2xx, pData->mutCtrHttpRequestsStatus2xx);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.2xx",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus2xx));
+	STATSCOUNTER_INIT(pData->httpRequestsTimeMs, pData->mutHttpRequestsTimeMs);
+	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.time_ms",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->httpRequestsTimeMs));
 
-STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus3xx, pData->mutCtrHttpRequestsStatus3xx);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.3xx",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus3xx));
+	CHKiRet(statsobj.ConstructFinalize(pData->stats));
 
-STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus4xx, pData->mutCtrHttpRequestsStatus4xx);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.4xx",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus4xx));
+	/* node created, let's add to list of instance configs for the module */
+	if (loadModConf->tail == NULL)
+	{
+		loadModConf->tail = loadModConf->root = pData;
+	}
+	else
+	{
+		loadModConf->tail->next = pData;
+		loadModConf->tail = pData;
+	}
 
-STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus5xx, pData->mutCtrHttpRequestsStatus5xx);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.5xx",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus5xx));
-
-STATSCOUNTER_INIT(pData->httpRequestsBytes, pData->mutHttpRequestsBytes);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.bytes",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->httpRequestsBytes));
-
-STATSCOUNTER_INIT(pData->httpRequestsTimeMs, pData->mutHttpRequestsTimeMs);
-CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.time_ms",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->httpRequestsTimeMs));
-
-CHKiRet(statsobj.ConstructFinalize(pData->stats));
-
-/* node created, let's add to list of instance configs for the module */
-if (loadModConf->tail == NULL)
-{
-	loadModConf->tail = loadModConf->root = pData;
-}
-else
-{
-	loadModConf->tail->next = pData;
-	loadModConf->tail = pData;
-}
-
-CODE_STD_FINALIZERnewActInst
-cnfparamvalsDestruct(pvals, &actpblk);
+	CODE_STD_FINALIZERnewActInst
+	cnfparamvalsDestruct(pvals, &actpblk);
 ENDnewActInst
 
-	BEGINbeginCnfLoad
-		printf("BEGINbeginCnfLoad\n");
-CODESTARTbeginCnfLoad
+BEGINbeginCnfLoad
+	CODESTARTbeginCnfLoad
 	loadModConf = pModConf;
-pModConf->pConf = pConf;
-pModConf->root = pModConf->tail = NULL;
+	pModConf->pConf = pConf;
+	pModConf->root = pModConf->tail = NULL;
 ENDbeginCnfLoad
 
-	BEGINendCnfLoad
-		printf("BEGINendCnfLoad\n");
-CODESTARTendCnfLoad
+BEGINendCnfLoad
+	CODESTARTendCnfLoad
 	loadModConf = NULL; /* done loading */
 ENDendCnfLoad
+	
+BEGINcheckCnf 
+	instanceConf_t *inst;
+	CODESTARTcheckCnf 
 
-	BEGINcheckCnf
-		printf("BEGINcheckCnf\n");
-instanceConf_t *inst;
-CODESTARTcheckCnf for (inst = pModConf->root; inst != NULL; inst = inst->next)
-{
-	ruleset_t *pRuleset;
-	rsRetVal localRet;
-
-	if (inst->retryRulesetName)
+	for (inst = pModConf->root; inst != NULL; inst = inst->next)
 	{
-		localRet = ruleset.GetRuleset(pModConf->pConf, &pRuleset, inst->retryRulesetName);
-		if (localRet == RS_RET_NOT_FOUND)
+		ruleset_t *pRuleset;
+		rsRetVal localRet;
+
+		if (inst->retryRulesetName)
 		{
-			LogError(0, localRet, "omsentinel: retry.ruleset '%s' not found - "
-								  "no retry ruleset will be used",
-					 inst->retryRulesetName);
-		}
-		else
-		{
-			inst->retryRuleset = pRuleset;
+			localRet = ruleset.GetRuleset(pModConf->pConf, &pRuleset, inst->retryRulesetName);
+			if (localRet == RS_RET_NOT_FOUND)
+			{
+				LogError(0, localRet, "omsentinel: retry.ruleset '%s' not found - "
+									"no retry ruleset will be used",
+						inst->retryRulesetName);
+			}
+			else
+			{
+				inst->retryRuleset = pRuleset;
+			}
 		}
 	}
-}
 ENDcheckCnf
 
-	BEGINactivateCnf
-		CODESTARTactivateCnf
-			printf("BEGINactivateCnf\n");
+BEGINactivateCnf
+	CODESTARTactivateCnf
 ENDactivateCnf
 
-	BEGINfreeCnf
-		CODESTARTfreeCnf
-			ENDfreeCnf
+BEGINfreeCnf
+	CODESTARTfreeCnf
+ENDfreeCnf
 
-				// HUP handling for the instance...
-				BEGINdoHUP
-					CODESTARTdoHUP
-						printf("CODESTARTdoHUP\n");
-pthread_mutex_lock(&pData->mutErrFile);
-if (pData->fdErrFile != -1)
-{
-	close(pData->fdErrFile);
-	pData->fdErrFile = -1;
-}
-pthread_mutex_unlock(&pData->mutErrFile);
+// HUP handling for the instance...
+BEGINdoHUP
+	CODESTARTdoHUP
+	pthread_mutex_lock(&pData->mutErrFile);
+	if (pData->fdErrFile != -1)
+	{
+		close(pData->fdErrFile);
+		pData->fdErrFile = -1;
+	}
+	pthread_mutex_unlock(&pData->mutErrFile);
 ENDdoHUP
 
-	// HUP handling for the worker...
-	BEGINdoHUPWrkr
-		CODESTARTdoHUPWrkr
-		 ENDdoHUPWrkr
+// HUP handling for the worker...
+BEGINdoHUPWrkr
+CODESTARTdoHUPWrkr
+ENDdoHUPWrkr
 
-				  BEGINmodExit
-					  printf("BEGINmodExit\n");
-CODESTARTmodExit if (pInputName != NULL)
-	prop.Destruct(&pInputName);
-curl_global_cleanup();
-objRelease(prop, CORE_COMPONENT);
-objRelease(ruleset, CORE_COMPONENT);
-objRelease(statsobj, CORE_COMPONENT);
-statsobj.Destruct(&httpStats);
+BEGINmodExit
+	CODESTARTmodExit 
+	if (pInputName != NULL) prop.Destruct(&pInputName);
+	curl_global_cleanup();
+	objRelease(prop, CORE_COMPONENT);
+	objRelease(ruleset, CORE_COMPONENT);
+	objRelease(statsobj, CORE_COMPONENT);
+	statsobj.Destruct(&httpStats);
 ENDmodExit
 
-	NO_LEGACY_CONF_parseSelectorAct
+NO_LEGACY_CONF_parseSelectorAct
 
-		BEGINqueryEtryPt
-			CODESTARTqueryEtryPt
-				CODEqueryEtryPt_STD_OMOD_QUERIES
-					CODEqueryEtryPt_STD_OMOD8_QUERIES
-						CODEqueryEtryPt_IsCompatibleWithFeature_IF_OMOD_QUERIES
-							CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES
-								CODEqueryEtryPt_doHUP
-									CODEqueryEtryPt_doHUPWrkr			  /* Load the worker HUP handling code */
-										CODEqueryEtryPt_TXIF_OMOD_QUERIES /* we support the transactional interface! */
-											CODEqueryEtryPt_STD_CONF2_QUERIES
-												ENDqueryEtryPt
+	BEGINqueryEtryPt CODESTARTqueryEtryPt
+CODEqueryEtryPt_STD_OMOD_QUERIES
+CODEqueryEtryPt_STD_OMOD8_QUERIES
+CODEqueryEtryPt_IsCompatibleWithFeature_IF_OMOD_QUERIES
+CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES
+CODEqueryEtryPt_doHUP
+CODEqueryEtryPt_doHUPWrkr			  /* Load the worker HUP handling code */
+	CODEqueryEtryPt_TXIF_OMOD_QUERIES /* we support the transactional interface! */
+		CODEqueryEtryPt_STD_CONF2_QUERIES
+ENDqueryEtryPt
 
-												BEGINmodInit()
-													printf("BEGINmodInit\n");
-CODESTARTmodInit
+BEGINmodInit()
+	CODESTARTmodInit
 	*ipIFVersProvided = CURR_MOD_IF_VERSION; /* we only support the current interface specification */
-CODEmodInit_QueryRegCFSLineHdlr
-	CHKiRet(objUse(prop, CORE_COMPONENT));
-CHKiRet(objUse(ruleset, CORE_COMPONENT));
-CHKiRet(objUse(statsobj, CORE_COMPONENT));
+	CODEmodInit_QueryRegCFSLineHdlr
+		CHKiRet(objUse(prop, CORE_COMPONENT));
+	CHKiRet(objUse(ruleset, CORE_COMPONENT));
+	CHKiRet(objUse(statsobj, CORE_COMPONENT));
 
-CHKiRet(statsobj.Construct(&httpStats));
-CHKiRet(statsobj.SetName(httpStats, (uchar *)"omsentinel"));
-CHKiRet(statsobj.SetOrigin(httpStats, (uchar *)"omsentinel"));
+	CHKiRet(statsobj.Construct(&httpStats));
+	CHKiRet(statsobj.SetName(httpStats, (uchar *)"omsentinel"));
+	CHKiRet(statsobj.SetOrigin(httpStats, (uchar *)"omsentinel"));
 
-STATSCOUNTER_INIT(ctrMessagesSubmitted, mutCtrMessagesSubmitted);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.submitted",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesSubmitted));
+	STATSCOUNTER_INIT(ctrMessagesSubmitted, mutCtrMessagesSubmitted);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.submitted",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesSubmitted));
 
-STATSCOUNTER_INIT(ctrMessagesSuccess, mutCtrMessagesSuccess);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.success",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesSuccess));
+	STATSCOUNTER_INIT(ctrMessagesSuccess, mutCtrMessagesSuccess);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.success",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesSuccess));
 
-STATSCOUNTER_INIT(ctrMessagesFail, mutCtrMessagesFail);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.fail",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesFail));
+	STATSCOUNTER_INIT(ctrMessagesFail, mutCtrMessagesFail);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.fail",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesFail));
 
-STATSCOUNTER_INIT(ctrMessagesRetry, mutCtrMessagesRetry);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.retry",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesRetry));
+	STATSCOUNTER_INIT(ctrMessagesRetry, mutCtrMessagesRetry);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.retry",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesRetry));
 
-STATSCOUNTER_INIT(ctrHttpRequestCount, mutCtrHttpRequestCount);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.count",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestCount));
+	STATSCOUNTER_INIT(ctrHttpRequestCount, mutCtrHttpRequestCount);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.count",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestCount));
 
-STATSCOUNTER_INIT(ctrHttpRequestSuccess, mutCtrHttpRequestSuccess);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.success",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestSuccess));
+	STATSCOUNTER_INIT(ctrHttpRequestSuccess, mutCtrHttpRequestSuccess);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.success",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestSuccess));
 
-STATSCOUNTER_INIT(ctrHttpRequestFail, mutCtrHttpRequestFail);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.fail",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestFail));
+	STATSCOUNTER_INIT(ctrHttpRequestFail, mutCtrHttpRequestFail);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.fail",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestFail));
 
-STATSCOUNTER_INIT(ctrHttpStatusSuccess, mutCtrHttpStatusSuccess);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.status.success",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpStatusSuccess));
+	STATSCOUNTER_INIT(ctrHttpStatusSuccess, mutCtrHttpStatusSuccess);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.status.success",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpStatusSuccess));
 
-STATSCOUNTER_INIT(ctrHttpStatusFail, mutCtrHttpStatusFail);
-CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.status.fail",
-							ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpStatusFail));
+	STATSCOUNTER_INIT(ctrHttpStatusFail, mutCtrHttpStatusFail);
+	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.status.fail",
+								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpStatusFail));
 
-CHKiRet(statsobj.ConstructFinalize(httpStats));
+	CHKiRet(statsobj.ConstructFinalize(httpStats));
 
-if (curl_global_init(CURL_GLOBAL_ALL) != 0)
-{
-	LogError(0, RS_RET_OBJ_CREATION_FAILED, "CURL fail. -http disabled");
-	ABORT_FINALIZE(RS_RET_OBJ_CREATION_FAILED);
-}
+	if (curl_global_init(CURL_GLOBAL_ALL) != 0)
+	{
+		LogError(0, RS_RET_OBJ_CREATION_FAILED, "CURL fail. -http disabled");
+		ABORT_FINALIZE(RS_RET_OBJ_CREATION_FAILED);
+	}
 
-CHKiRet(prop.Construct(&pInputName));
-CHKiRet(prop.SetString(pInputName, UCHAR_CONSTANT("omsentinel"), sizeof("omsentinel") - 1));
-CHKiRet(prop.ConstructFinalize(pInputName));
+	CHKiRet(prop.Construct(&pInputName));
+	CHKiRet(prop.SetString(pInputName, UCHAR_CONSTANT("omsentinel"), sizeof("omsentinel") - 1));
+	CHKiRet(prop.ConstructFinalize(pInputName));
 ENDmodInit
 
 	/* vi:set ai:
