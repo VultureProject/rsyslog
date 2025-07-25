@@ -116,8 +116,6 @@ typedef struct instanceConf_s
 	uchar *authParams; // auth purpose
 	int fdErrFile;	   /* error file fd or -1 if not open */
 	pthread_mutex_t mutErrFile;
-	long healthCheckTimeout;
-	long restPathTimeout;
 	uchar *authBuf;
 	uchar *headerBuf;
 	uchar *httpHeader;
@@ -126,13 +124,10 @@ typedef struct instanceConf_s
 	int proxyPort;
 	uchar *tplName;
 	uchar *errorFile;
-	sbool batchMode;
 	size_t maxBatchBytes;
 	size_t maxBatchSize;
 	sbool compress;
 	int compressionLevel; /* Compression level for zlib, default=-1, fastest=1, best=9, none=0*/
-	sbool allowUnsignedCerts;
-	sbool skipVerifyHost;
 	uchar *caCertFile;
 	uchar *myCertFile;
 	uchar *myPrivKeyFile;
@@ -202,27 +197,22 @@ typedef struct wrkrInstanceData
 /* tables for interfacing with the v6 config system */
 /* action (instance) parameters */
 static struct cnfparamdescr actpdescr[] = {
-	{"stream_name", eCmdHdlrGetWord, 0},
-	{"dce", eCmdHdlrGetWord, 0},
-	{"dcr", eCmdHdlrGetWord, 0},
-	{"tenant_id", eCmdHdlrGetWord, 0},
-	{"client_id", eCmdHdlrGetWord, 0},
-	{"client_secret", eCmdHdlrGetWord, 0},
+	{"stream_name", eCmdHdlrGetWord, 1},
+	{"dce", eCmdHdlrGetWord, 1},
+	{"dcr", eCmdHdlrGetWord, 1},
+	{"tenant_id", eCmdHdlrGetWord, 1},
+	{"client_id", eCmdHdlrGetWord, 1},
+	{"client_secret", eCmdHdlrGetWord, 1},
 	{"grant_type", eCmdHdlrGetWord, 0},
 	{"scope", eCmdHdlrGetWord, 0},
-	{"healthchecktimeout", eCmdHdlrInt, 0},
-	{"restpathtimeout", eCmdHdlrInt, 0},
 	{"proxyhost", eCmdHdlrString, 0},
 	{"proxyport", eCmdHdlrInt, 0},
-	{"batch", eCmdHdlrBinary, 0},
 	{"batch.maxbytes", eCmdHdlrSize, 0},
 	{"batch.maxsize", eCmdHdlrSize, 0},
 	{"compress", eCmdHdlrBinary, 0},
 	{"compress.level", eCmdHdlrInt, 0},
 	{"errorfile", eCmdHdlrGetWord, 0},
 	{"template", eCmdHdlrGetWord, 0},
-	{"allowunsignedcerts", eCmdHdlrBinary, 0},
-	{"skipverifyhost", eCmdHdlrBinary, 0},
 	{"tls.cacert", eCmdHdlrString, 0},
 	{"tls.mycert", eCmdHdlrString, 0},
 	{"tls.myprivkey", eCmdHdlrString, 0},
@@ -283,23 +273,24 @@ BEGINcreateWrkrInstance
 	pWrkrData->httpStatusCode = 0;
 	pWrkrData->restURL = NULL;
 	pWrkrData->bzInitDone = 0;
-	if (pData->batchMode)
+	
+
+	//batch
+	pWrkrData->batch.nmemb = 0;
+	pWrkrData->batch.sizeBytes = 0;
+	batchData = (uchar **)malloc(pData->maxBatchSize * sizeof(uchar *));
+	if (batchData == NULL)
 	{
-		pWrkrData->batch.nmemb = 0;
-		pWrkrData->batch.sizeBytes = 0;
-		batchData = (uchar **)malloc(pData->maxBatchSize * sizeof(uchar *));
-		if (batchData == NULL)
-		{
-			LogError(0, RS_RET_OUT_OF_MEMORY,
-					"omsentinel: cannot allocate memory for batch queue turning off batch mode\n");
-			pData->batchMode = 0; /* at least it works */
-		}
-		else
-		{
-			pWrkrData->batch.data = batchData;
-			pWrkrData->batch.restPath = NULL;
-		}
+		LogError(0, RS_RET_OUT_OF_MEMORY,
+				"omsentinel: cannot allocate memory for batch queue\n");
+		ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
 	}
+	else
+	{
+		pWrkrData->batch.data = batchData;
+		pWrkrData->batch.restPath = NULL;
+	}
+	
 
 	// Log ingestion config parsing
 	if (pData->dce && pData->dcr && pData->stream_name)
@@ -695,14 +686,9 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 	pData = pWrkrData->pData;
 	statusCode = pWrkrData->httpStatusCode;
 
-	if (pData->batchMode)
-	{
-		numMessages = pWrkrData->batch.nmemb;
-	}
-	else
-	{
-		numMessages = 1;
-	}
+
+	numMessages = pWrkrData->batch.nmemb;
+	
 
 	// 500+ errors return RS_RET_SUSPENDED if NOT batchMode and should be retried
 	// status 0 is the default and the request failed for some reason, retry this too
@@ -834,7 +820,7 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 		if (iRet == RS_RET_DATAFAIL)
 			ABORT_FINALIZE(iRet);
 
-		if (pData->batchMode && pData->maxBatchSize > 1)
+		if (pData->maxBatchSize > 1)
 		{
 			// Write each message back to retry ruleset if configured
 			if (pData->retryFailures && pData->retryRuleset != NULL)
@@ -1016,16 +1002,11 @@ static rsRetVal ATTR_NONNULL()
 
 	DEFiRet;
 
-	if (pWrkrData->pData->batchMode)
-	{
 
-		slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_JSON);
-	}
-	else
-	{
-		// Otherwise non batch, presume most users are sending JSON
-		slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_JSON);
-	}
+
+	slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_JSON);
+	
+	
 
 	CHKmalloc(slist);
 
@@ -1389,13 +1370,8 @@ BEGINbeginTransaction
 		curlAuth(pWrkrData, pData->authParams);
 	}
 
-	if (!pWrkrData->pData->batchMode)
-	{
-		FINALIZE;
-	}
 
 	initializeBatch(pWrkrData);
-finalize_it : 
 ENDbeginTransaction
 
 BEGINdoAction
@@ -1408,58 +1384,52 @@ BEGINdoAction
 
 	if (pData->token && pData->dce && pData->dcr && pData->stream_name)
 	{
-		if (pWrkrData->pData->batchMode)
+
+		/* If the maxbatchsize is 1, then build and immediately post a batch with 1 element.
+		* This mode will play nicely with rsyslog's action.resumeRetryCount logic.
+		*/
+		if (pWrkrData->pData->maxBatchSize == 1)
 		{
-
-			/* If the maxbatchsize is 1, then build and immediately post a batch with 1 element.
-			* This mode will play nicely with rsyslog's action.resumeRetryCount logic.
-			*/
-			if (pWrkrData->pData->maxBatchSize == 1)
-			{
-				initializeBatch(pWrkrData);
-				CHKiRet(buildBatch(pWrkrData, ppString[0]));
-				CHKiRet(submitBatch(pWrkrData, ppString));
-				FINALIZE;
-			}
-
-			/* We should submit if any of these conditions are true
-			* 1. Total batch size > pWrkrData->pData->maxBatchSize
-			* 2. Total bytes > pWrkrData->pData->maxBatchBytes
-			*/
-			nBytes = ustrlen((char *)ppString[0]) - 1;
-			submit = 0;
-
-			if (pWrkrData->batch.nmemb >= pWrkrData->pData->maxBatchSize)
-			{
-				submit = 1;
-				DBGPRINTF("omsentinel: maxbatchsize limit reached submitting batch of %zd elements.\n",
-						pWrkrData->batch.nmemb);
-			}
-			else if (computeBatchSize(pWrkrData) + nBytes > pWrkrData->pData->maxBatchBytes)
-			{
-				submit = 1;
-				DBGPRINTF("omsentinel: maxbytes limit reached submitting partial batch of %zd elements.\n",
-						pWrkrData->batch.nmemb);
-			}
-
-			if (submit)
-			{
-				CHKiRet(submitBatch(pWrkrData, ppString));
-				initializeBatch(pWrkrData);
-			}
-
+			initializeBatch(pWrkrData);
 			CHKiRet(buildBatch(pWrkrData, ppString[0]));
+			CHKiRet(submitBatch(pWrkrData, ppString));
+			FINALIZE;
+		}
 
-			/* If there is only one item in the batch, all previous items have been
-			* submitted or this is the first item for this transaction. Return previous
-			* committed so that all items leading up to the current (exclusive)
-			* are not replayed should a failure occur anywhere else in the transaction. */
-			iRet = pWrkrData->batch.nmemb == 1 ? RS_RET_PREVIOUS_COMMITTED : RS_RET_DEFER_COMMIT;
-		}
-		else
+		/* We should submit if any of these conditions are true
+		* 1. Total batch size > pWrkrData->pData->maxBatchSize
+		* 2. Total bytes > pWrkrData->pData->maxBatchBytes
+		*/
+		nBytes = ustrlen((char *)ppString[0]) - 1;
+		submit = 0;
+
+		if (pWrkrData->batch.nmemb >= pWrkrData->pData->maxBatchSize)
 		{
-			CHKiRet(curlPost(pWrkrData, ppString[0], strlen((char *)ppString[0]), ppString, 1));
+			submit = 1;
+			DBGPRINTF("omsentinel: maxbatchsize limit reached submitting batch of %zd elements.\n",
+					pWrkrData->batch.nmemb);
 		}
+		else if (computeBatchSize(pWrkrData) + nBytes > pWrkrData->pData->maxBatchBytes)
+		{
+			submit = 1;
+			DBGPRINTF("omsentinel: maxbytes limit reached submitting partial batch of %zd elements.\n",
+					pWrkrData->batch.nmemb);
+		}
+
+		if (submit)
+		{
+			CHKiRet(submitBatch(pWrkrData, ppString));
+			initializeBatch(pWrkrData);
+		}
+
+		CHKiRet(buildBatch(pWrkrData, ppString[0]));
+
+		/* If there is only one item in the batch, all previous items have been
+		* submitted or this is the first item for this transaction. Return previous
+		* committed so that all items leading up to the current (exclusive)
+		* are not replayed should a failure occur anywhere else in the transaction. */
+		iRet = pWrkrData->batch.nmemb == 1 ? RS_RET_PREVIOUS_COMMITTED : RS_RET_DEFER_COMMIT;
+		
 	}
 	else
 	{
@@ -1502,14 +1472,6 @@ ENDendTransaction
 	{
 		curl_easy_setopt(handle, CURLOPT_PROXYPORT, pWrkrData->pData->proxyPort);
 	}
-	if (pWrkrData->pData->restPathTimeout)
-	{
-		curl_easy_setopt(handle, CURLOPT_TIMEOUT_MS, pWrkrData->pData->restPathTimeout);
-	}
-	if (pWrkrData->pData->allowUnsignedCerts)
-		curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, FALSE);
-	if (pWrkrData->pData->skipVerifyHost)
-		curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, FALSE);
 	if (pWrkrData->pData->authBuf != NULL)
 	{
 		curl_easy_setopt(handle, CURLOPT_USERPWD, pWrkrData->pData->authBuf);
@@ -1530,8 +1492,6 @@ static void ATTR_NONNULL()
 {
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
 	curlSetupCommon(pWrkrData, pWrkrData->curlCheckConnHandle);
-	curl_easy_setopt(pWrkrData->curlCheckConnHandle,
-					 CURLOPT_TIMEOUT_MS, pWrkrData->pData->healthCheckTimeout);
 }
 
 static void ATTR_NONNULL(1)
@@ -1626,25 +1586,20 @@ static void ATTR_NONNULL()
 	pData->authReply = NULL;
 	pData->token = NULL;
 	pData->authParams = NULL;
-	pData->healthCheckTimeout = 3500;
-	pData->restPathTimeout = 0;
 	pData->httpHeader = NULL;
 	pData->authBuf = NULL;
 	pData->client_id = NULL;
 	pData->tenant_id = NULL;
 	pData->client_secret = NULL;
-	pData->scope = NULL;
-	pData->grant_type = NULL;
+	pData->scope = (uchar*)"https://monitor.azure.com/.default";
+	pData->grant_type = (uchar*)"client_credentials";
 	pData->restPath = NULL;
 	pData->proxyHost = NULL;
 	pData->proxyPort = 0;
-	pData->batchMode = 0;
 	pData->maxBatchBytes = 10485760; // i.e. 10 MB Is the default max message size for AWS API Gateway
 	pData->maxBatchSize = 1;		 // 100 messages
 	pData->compress = 0;			 // off
 	pData->compressionLevel = -1;	 // default compression
-	pData->allowUnsignedCerts = 0;
-	pData->skipVerifyHost = 0;
 	pData->tplName = NULL;
 	pData->errorFile = NULL;
 	pData->caCertFile = NULL;
@@ -1699,14 +1654,6 @@ BEGINnewActInst struct cnfparamvals *pvals;
 	{
 		pData->stream_name = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
 	}
-	else if (!strcmp(actpblk.descr[i].name, "healthchecktimeout"))
-	{
-		pData->healthCheckTimeout = (long)pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "restpathtimeout"))
-	{
-		pData->restPathTimeout = (long)pvals[i].val.d.n;
-	}
 	else if (!strcmp(actpblk.descr[i].name, "restpath"))
 	{
 		pData->restPath = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
@@ -1739,10 +1686,6 @@ BEGINnewActInst struct cnfparamvals *pvals;
 	{
 		pData->proxyPort = (int)pvals[i].val.d.n;
 	}
-	else if (!strcmp(actpblk.descr[i].name, "batch"))
-	{
-		pData->batchMode = pvals[i].val.d.n;
-	}
 	else if (!strcmp(actpblk.descr[i].name, "batch.maxbytes"))
 	{
 		pData->maxBatchBytes = (size_t)pvals[i].val.d.n;
@@ -1768,14 +1711,6 @@ BEGINnewActInst struct cnfparamvals *pvals;
 									"valid levels are -1 and 0-9",
 						compressionLevel);
 		}
-	}
-	else if (!strcmp(actpblk.descr[i].name, "allowunsignedcerts"))
-	{
-		pData->allowUnsignedCerts = pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "skipverifyhost"))
-	{
-		pData->skipVerifyHost = pvals[i].val.d.n;
 	}
 	else if (!strcmp(actpblk.descr[i].name, "template"))
 	{
