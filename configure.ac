@@ -1062,7 +1062,7 @@ AM_CONDITIONAL(ENABLE_CLICKHOUSE, test x$enable_clickhouse = xyes)
 
 # omsentinel support
 AC_ARG_ENABLE(omsentinel,
-        [AS_HELP_STRING([--enable-omsentinel],[Enable http output module @<:@default=no@:>@])],
+        [AS_HELP_STRING([--enable-omsentinel],[Enable sentinel output module @<:@default=no@:>@])],
         [case "${enableval}" in
          yes) enable_omsentinel="yes" ;;
           no) enable_omsentinel="no" ;;
@@ -3031,13 +3031,10 @@ echo "    omhttpfs module will be compiled:         $enable_omhttpfs"
 echo "    omamqp1 module will be compiled:          $enable_omamqp1"
 echo "    omtcl module will be compiled:            $enable_omtcl"
 echo "    omkafka module will be compiled:          $enable_omkafka"
-<<<<<<< HEAD
 echo "    omhiredis module will be compiled:        $enable_omhiredis"
 echo "    omazureeventhubs module will be compiled: $enable_omazureeventhubs"
 echo "    omdtls module will be compiled:           $enable_omdtls"
-=======
-echo "    omsentinel module will be compiled:          $enable_omkafka"
->>>>>>> 9719ba5ac (omsentinel: adding new module)
+echo "    omsentinel module will be compiled:          $enable_omsentinel"
 echo
 echo "---{ parser modules }---"
 echo "    pmlastmsg module will be compiled:        $enable_pmlastmsg"
