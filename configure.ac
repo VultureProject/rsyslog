@@ -1062,7 +1062,7 @@ AM_CONDITIONAL(ENABLE_CLICKHOUSE, test x$enable_clickhouse = xyes)
 
 # omsentinel support
 AC_ARG_ENABLE(omsentinel,
-        [AS_HELP_STRING([--enable-omsentinel],[Enable sentinel output module @<:@default=no@:>@])],
+        [AS_HELP_STRING([--enable-omsentinel],[Enable Microsoft Sentinel output module @<:@default=no@:>@])],
         [case "${enableval}" in
          yes) enable_omsentinel="yes" ;;
           no) enable_omsentinel="no" ;;

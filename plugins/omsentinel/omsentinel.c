@@ -88,8 +88,6 @@ static int omsentinelInstancesCnt = 0;
 #define WRKR_DATA_TYPE_ES 0xBADF0001
 
 #define HTTP_HEADER_CONTENT_JSON "Content-Type: application/json; charset=utf-8"
-#define HTTP_HEADER_CONTENT_TEXT "Content-Type: text/plain"
-#define HTTP_HEADER_CONTENT_KAFKA "Content-Type: application/vnd.kafka.v1+json"
 #define HTTP_HEADER_ENCODING_GZIP "Content-Encoding: gzip"
 #define HTTP_HEADER_EXPECT_EMPTY "Expect:"
 
@@ -107,6 +105,7 @@ typedef struct instanceConf_s
 	uchar *client_secret; // client_secret generated from app registration
 	uchar *scope;		  // wanted resource
 	uchar *grant_type;	  // auth type
+	uchar *auth_domain;
 	uchar *authorizationHeader;
 	time_t authExp;
 	uchar *apiRestAuth;
@@ -205,6 +204,7 @@ static struct cnfparamdescr actpdescr[] = {
 	{"client_secret", eCmdHdlrGetWord, 1},
 	{"grant_type", eCmdHdlrGetWord, 0},
 	{"scope", eCmdHdlrGetWord, 0},
+	{"auth_domain", eCmdHdlrGetWord, 0},
 	{"proxyhost", eCmdHdlrString, 0},
 	{"proxyport", eCmdHdlrInt, 0},
 	{"batch.maxbytes", eCmdHdlrSize, 0},
@@ -316,7 +316,7 @@ BEGINcreateWrkrInstance
 	// Authentification
 	if (pData->scope && pData->client_secret && pData->client_id && pData->grant_type && pData->tenant_id)
 	{
-		if (asprintf((char **)&pData->apiRestAuth, "https://login.microsoftonline.com/%s/oauth2/v2.0/token", pData->tenant_id) < 0)
+		if (asprintf((char **)&pData->apiRestAuth, "https://%s/%s/oauth2/v2.0/token",pData->auth_domain,pData->tenant_id) < 0)
 		{
 			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth api\n");
 			ABORT_FINALIZE(RS_RET_ERR);
@@ -361,6 +361,7 @@ BEGINfreeInstance
 	free(pData->scope);			// sentinel auth
 	free(pData->grant_type);	// sentinel auth
 	free(pData->tenant_id);		// sentinel tenant_id
+	free(pData->auth_domain);
 	free(pData->dce);
 	free(pData->dcr);
 	free(pData->stream_name);
@@ -385,11 +386,13 @@ BEGINfreeInstance
 		statsobj.Destruct(&pData->stats);
 	}
 	free(pData->statsName);
-	ENDfreeInstance
+ENDfreeInstance
 
-		BEGINfreeWrkrInstance
-			CODESTARTfreeWrkrInstance
-				curlCleanup(pWrkrData);
+
+
+BEGINfreeWrkrInstance
+	CODESTARTfreeWrkrInstance
+	curlCleanup(pWrkrData);
 
 	free(pWrkrData->restURL);
 	pWrkrData->restURL = NULL;
@@ -439,24 +442,9 @@ BEGINtryResume
 	DBGPRINTF("omsentinel: tryResume called\n");
 ENDtryResume
 
-/* get the current index and type for this message */
-static void ATTR_NONNULL(1)
-		getRestPath(const instanceData *const pData, uchar **const tpls,
-					uchar **const restPath)
-{
-	*restPath = pData->restPath;
-	if (tpls == NULL)
-	{
-		goto done;
-	}
-
-done:
-	assert(restPath != NULL);
-	return;
-}
 
 static rsRetVal ATTR_NONNULL(1)
-	setPostURL(wrkrInstanceData_t *const pWrkrData, uchar **const tpls)
+	setPostURL(wrkrInstanceData_t *const pWrkrData)
 {
 	uchar *restPath;
 	char *baseUrl;
@@ -481,7 +469,7 @@ static rsRetVal ATTR_NONNULL(1)
 	}
 	else
 	{
-		getRestPath(pData, tpls, &restPath);
+		restPath = pData->restPath;
 	}
 
 	r = 0;
@@ -777,23 +765,12 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 	/* when retriable codes are configured, always check status codes */
 	if (pData->nhttpRetryCodes)
 	{
-		sbool bMatch = 0;
 		for (int i = 0; i < pData->nhttpRetryCodes && pData->httpRetryCodes[i] != 0; ++i)
 		{
 			if (statusCode == (long)pData->httpRetryCodes[i])
 			{
-				bMatch = 1;
-				break;
+				ABORT_FINALIZE(RS_RET_SUSPENDED);
 			}
-		}
-		if (bMatch)
-		{
-			/* just force retry */
-			iRet = RS_RET_SUSPENDED;
-		}
-		else
-		{
-			iRet = RS_RET_OK;
 		}
 	}
 
@@ -804,8 +781,7 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 		{
 			if (statusCode == (long)pData->ignorableCodes[i])
 			{
-				iRet = RS_RET_OK;
-				break;
+				ABORT_FINALIZE(RS_RET_OK);
 			}
 		}
 	}
@@ -1054,31 +1030,7 @@ size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp)
 	size_t totalSize = size * nmemb;
 
 	pData->authReply = (uchar *)strdup((const char *)contents);
-	struct json_object *parsed_json = json_tokener_parse((char *)pData->authReply);
-	if (parsed_json != NULL)
-	{
-		struct json_object *access_token = NULL;
-		struct json_object *expires_in = NULL;
-		// token bearer
-		if (json_object_object_get_ex(parsed_json, "access_token", &access_token))
-		{
-			const char *tokenStr = json_object_get_string(access_token);
-			if (tokenStr)
-			{
-				pData->token = (uchar *)strdup(tokenStr);
-			}
-		}
-		// expiration date
-		if (json_object_object_get_ex(parsed_json, "expires_in", &expires_in))
-		{
-			const int expireDate = json_object_get_int(expires_in);
-			if (expireDate)
-			{
-				pData->authExp = time(NULL) + expireDate; // calcul de la date d'expiration du token avec le timestamp actuel
-			}
-		}
-		json_object_put(parsed_json);
-	}
+
 
 	return totalSize;
 }
@@ -1111,15 +1063,49 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 		if (http_code != 200)
 		{
-			LogError(0, RS_RET_ERR, "omsentinel: error: %s\n", pData->authReply);
+			dbgprintf("omsentinel: http_reply_code=%ld \n", http_code);
 			ABORT_FINALIZE(RS_RET_SUSPENDED);
 		}
 	}
-	CHKmalloc(pData->token);
-	CHKmalloc(pData->authReply);
 
-	// httpHeaders
+	// parsing and serializing http response
+	if(pData->authReply){
+		struct json_object *parsed_json = json_tokener_parse((char *)pData->authReply);
+		if (parsed_json != NULL)
+		{
+			struct json_object *access_token = NULL;
+			struct json_object *expires_in = NULL;
+			// token bearer
+			if (json_object_object_get_ex(parsed_json, "access_token", &access_token))
+			{
+				const char *tokenStr = json_object_get_string(access_token);
+				if (tokenStr)
+				{
+					if(!(pData->token = (uchar *)strdup(tokenStr)))
+					{
+						LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: could not allocate Bearer token \n");
+						ABORT_FINALIZE(RS_RET_ERR);
+					}
+				}
+			}
+			// expiration date
+			if (json_object_object_get_ex(parsed_json, "expires_in", &expires_in))
+			{
+				const int expireDate = json_object_get_int(expires_in);
+				if (expireDate)
+				{
+					pData->authExp = time(NULL) + expireDate; // calcul de la date d'expiration du token avec le timestamp actuel
+				}
+			}
+			json_object_put(parsed_json);
+		}
+    }else{
+		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: could not allocate http response \n");
+		ABORT_FINALIZE(RS_RET_ERR);
+	}
+	
 
+	// httpHeader
 	if (asprintf((char **)&pData->httpHeader, (char *)pData->authorizationHeader, pData->token) < 0)
 	{
 		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for http header\n");
@@ -1132,7 +1118,7 @@ finalize_it:
 }
 
 static rsRetVal ATTR_NONNULL(1, 2)
-	curlPost(wrkrInstanceData_t *pWrkrData, uchar *message, int msglen, uchar **tpls,
+	curlPost(wrkrInstanceData_t *pWrkrData, uchar *message, int msglen,
 			 const int nmsgs __attribute__((unused)))
 {
 
@@ -1147,7 +1133,7 @@ static rsRetVal ATTR_NONNULL(1, 2)
 
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
 
-	CHKiRet(setPostURL(pWrkrData, tpls));
+	CHKiRet(setPostURL(pWrkrData));
 
 	pWrkrData->reply = NULL;
 	pWrkrData->replyLen = 0;
@@ -1340,8 +1326,7 @@ submitBatch(wrkrInstanceData_t *pWrkrData, uchar **tpls)
 
 	DBGPRINTF("omsentinel: submitBatch, batch: '%s' tpls: '%p'\n", batchBuf, tpls);
 
-	CHKiRet(curlPost(pWrkrData, (uchar *)batchBuf, strlen(batchBuf),
-					 tpls, pWrkrData->batch.nmemb));
+	CHKiRet(curlPost(pWrkrData, (uchar *)batchBuf, strlen(batchBuf), pWrkrData->batch.nmemb));
 
 finalize_it:
 	if (batchBuf != NULL)
@@ -1593,6 +1578,7 @@ static void ATTR_NONNULL()
 	pData->client_secret = NULL;
 	pData->scope = (uchar*)"https://monitor.azure.com/.default";
 	pData->grant_type = (uchar*)"client_credentials";
+	pData->auth_domain= (uchar*)"login.microsoftonline.com";
 	pData->restPath = NULL;
 	pData->proxyHost = NULL;
 	pData->proxyPort = 0;
@@ -1677,6 +1663,10 @@ BEGINnewActInst struct cnfparamvals *pvals;
 	else if (!strcmp(actpblk.descr[i].name, "grant_type"))
 	{
 		pData->grant_type = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+	}
+	else if (!strcmp(actpblk.descr[i].name, "auth_domain"))
+	{
+		pData->auth_domain = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
 	}
 	else if (!strcmp(actpblk.descr[i].name, "proxyhost"))
 	{
