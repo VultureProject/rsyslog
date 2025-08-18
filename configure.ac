@@ -2900,7 +2900,7 @@ AC_CONFIG_FILES([Makefile \
 		plugins/omgssapi/Makefile \
 		plugins/ommysql/Makefile \
 		plugins/ompgsql/Makefile \
-                plugins/omsentinel/Makefile \
+		plugins/omsentinel/Makefile \
 		plugins/omrelp/Makefile \
 		plugins/omlibdbi/Makefile \
 		plugins/ommail/Makefile \
@@ -3034,7 +3034,7 @@ echo "    omkafka module will be compiled:          $enable_omkafka"
 echo "    omhiredis module will be compiled:        $enable_omhiredis"
 echo "    omazureeventhubs module will be compiled: $enable_omazureeventhubs"
 echo "    omdtls module will be compiled:           $enable_omdtls"
-echo "    omsentinel module will be compiled:          $enable_omsentinel"
+echo "    omsentinel module will be compiled:       $enable_omsentinel"
 echo
 echo "---{ parser modules }---"
 echo "    pmlastmsg module will be compiled:        $enable_pmlastmsg"
