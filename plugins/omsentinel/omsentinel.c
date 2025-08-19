@@ -71,16 +71,16 @@ MODULE_CNFNAME("omsentinel")
 DEF_OMOD_STATIC_DATA
 DEFobjCurrIf(prop) DEFobjCurrIf(ruleset) DEFobjCurrIf(statsobj)
 
-	statsobj_t *httpStats;
-STATSCOUNTER_DEF(ctrMessagesSubmitted, mutCtrMessagesSubmitted);   // Number of message submitted to module
-STATSCOUNTER_DEF(ctrMessagesSuccess, mutCtrMessagesSuccess);	   // Number of messages successfully sent
-STATSCOUNTER_DEF(ctrMessagesFail, mutCtrMessagesFail);			   // Number of messages that failed to send
-STATSCOUNTER_DEF(ctrMessagesRetry, mutCtrMessagesRetry);		   // Number of messages requeued for retry
-STATSCOUNTER_DEF(ctrHttpRequestCount, mutCtrHttpRequestCount);	   // Number of attempted HTTP requests
-STATSCOUNTER_DEF(ctrHttpRequestSuccess, mutCtrHttpRequestSuccess); // Number of successful HTTP requests
-STATSCOUNTER_DEF(ctrHttpRequestFail, mutCtrHttpRequestFail);	   // Number of failed HTTP req, 4XX+ are NOT failures
-STATSCOUNTER_DEF(ctrHttpStatusSuccess, mutCtrHttpStatusSuccess);   // Number of requests returning 1XX/2XX status
-STATSCOUNTER_DEF(ctrHttpStatusFail, mutCtrHttpStatusFail);		   // Number of requests returning 300+ status
+statsobj_t *httpStats;
+STATSCOUNTER_DEF(ctrMessagesSubmitted, mutCtrMessagesSubmitted);	// Number of message submitted to module
+STATSCOUNTER_DEF(ctrMessagesSuccess, mutCtrMessagesSuccess);		// Number of messages successfully sent
+STATSCOUNTER_DEF(ctrMessagesFail, mutCtrMessagesFail);			// Number of messages that failed to send
+STATSCOUNTER_DEF(ctrMessagesRetry, mutCtrMessagesRetry);		// Number of messages requeued for retry
+STATSCOUNTER_DEF(ctrHttpRequestCount, mutCtrHttpRequestCount);		// Number of attempted HTTP requests
+STATSCOUNTER_DEF(ctrHttpRequestSuccess, mutCtrHttpRequestSuccess);	// Number of successful HTTP requests
+STATSCOUNTER_DEF(ctrHttpRequestFail, mutCtrHttpRequestFail);		// Number of failed HTTP req, 4XX+ are NOT failures
+STATSCOUNTER_DEF(ctrHttpStatusSuccess, mutCtrHttpStatusSuccess);	// Number of requests returning 1XX/2XX status
+STATSCOUNTER_DEF(ctrHttpStatusFail, mutCtrHttpStatusFail);		// Number of requests returning 300+ status
 
 static prop_t *pInputName = NULL;
 static int omsentinelInstancesCnt = 0;
@@ -101,10 +101,10 @@ typedef struct instanceConf_s
 	uchar *dce;
 	uchar *dcr;
 	uchar *tenant_id;
-	uchar *client_id;	  // client_id generated from app registration
-	uchar *client_secret; // client_secret generated from app registration
-	uchar *scope;		  // wanted resource
-	uchar *grant_type;	  // auth type
+	uchar *client_id;	// client_id generated from app registration
+	uchar *client_secret;	// client_secret generated from app registration
+	uchar *scope;		// wanted resource
+	uchar *grant_type;	// auth type
 	uchar *auth_domain;
 	uchar *authorizationHeader;
 	time_t authExp;
@@ -112,8 +112,8 @@ typedef struct instanceConf_s
 	uchar *authReply;
 	uchar *token;
 	uchar *baseURL;
-	uchar *authParams; // auth purpose
-	int fdErrFile;	   /* error file fd or -1 if not open */
+	uchar *authParams;	// auth purpose
+	int fdErrFile;		// error file fd or -1 if not open
 	pthread_mutex_t mutErrFile;
 	uchar *authBuf;
 	uchar *headerBuf;
@@ -126,7 +126,7 @@ typedef struct instanceConf_s
 	size_t maxBatchBytes;
 	size_t maxBatchSize;
 	sbool compress;
-	int compressionLevel; /* Compression level for zlib, default=-1, fastest=1, best=9, none=0*/
+	int compressionLevel;	// Compression level for zlib, default=-1, fastest=1, best=9, none=0
 	uchar *caCertFile;
 	uchar *myCertFile;
 	uchar *myPrivKeyFile;
@@ -236,22 +236,22 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message);
 
 /* compressCtx functions */
 static void ATTR_NONNULL()
-	initCompressCtx(wrkrInstanceData_t *pWrkrData);
+initCompressCtx(wrkrInstanceData_t *pWrkrData);
 
 static void ATTR_NONNULL()
-	freeCompressCtx(wrkrInstanceData_t *pWrkrData);
+freeCompressCtx(wrkrInstanceData_t *pWrkrData);
 
 static rsRetVal ATTR_NONNULL()
-	resetCompressCtx(wrkrInstanceData_t *pWrkrData, size_t len);
+resetCompressCtx(wrkrInstanceData_t *pWrkrData, size_t len);
 
 static rsRetVal ATTR_NONNULL()
-	growCompressCtx(wrkrInstanceData_t *pWrkrData, size_t newLen);
+growCompressCtx(wrkrInstanceData_t *pWrkrData, size_t newLen);
 
 static rsRetVal ATTR_NONNULL()
-	appendCompressCtx(wrkrInstanceData_t *pWrkrData, uchar *srcBuf, size_t srcLen);
+appendCompressCtx(wrkrInstanceData_t *pWrkrData, uchar *srcBuf, size_t srcLen);
 
 BEGINcreateInstance
-	CODESTARTcreateInstance
+CODESTARTcreateInstance
 	pData->fdErrFile = -1;
 	pthread_mutex_init(&pData->mutErrFile, NULL);
 	pData->caCertFile = NULL;
@@ -262,9 +262,9 @@ BEGINcreateInstance
 	pData->retryRuleset = NULL;
 ENDcreateInstance
 
-BEGINcreateWrkrInstance 
+BEGINcreateWrkrInstance
 	uchar **batchData;
-	CODESTARTcreateWrkrInstance
+CODESTARTcreateWrkrInstance
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
 	pWrkrData->curlHeader = NULL;
 	pWrkrData->curlPostHandle = NULL;
@@ -273,7 +273,7 @@ BEGINcreateWrkrInstance
 	pWrkrData->httpStatusCode = 0;
 	pWrkrData->restURL = NULL;
 	pWrkrData->bzInitDone = 0;
-	
+
 
 	//batch
 	pWrkrData->batch.nmemb = 0;
@@ -290,7 +290,7 @@ BEGINcreateWrkrInstance
 		pWrkrData->batch.data = batchData;
 		pWrkrData->batch.restPath = NULL;
 	}
-	
+
 
 	// Log ingestion config parsing
 	if (pData->dce && pData->dcr && pData->stream_name)
@@ -342,23 +342,25 @@ finalize_it:
 ENDcreateWrkrInstance
 
 BEGINisCompatibleWithFeature
-	CODESTARTisCompatibleWithFeature 
+CODESTARTisCompatibleWithFeature
 	if (eFeat == sFEATURERepeatedMsgReduction)
 		iRet = RS_RET_OK;
 ENDisCompatibleWithFeature
 
 BEGINfreeInstance
-	CODESTARTfreeInstance 
+CODESTARTfreeInstance
 	if (pData->fdErrFile != -1)
+	{
 		close(pData->fdErrFile);
+	}
 	pthread_mutex_destroy(&pData->mutErrFile);
 	free(pData->httpHeader);
 	free(pData->authBuf);
 	free(pData->headerBuf);
 	free(pData->restPath);
 	free(pData->client_id);		// sentinel auth
-	free(pData->client_secret); // sentinel auth
-	free(pData->scope);			// sentinel auth
+	free(pData->client_secret);	// sentinel auth
+	free(pData->scope);		// sentinel auth
 	free(pData->grant_type);	// sentinel auth
 	free(pData->tenant_id);		// sentinel tenant_id
 	free(pData->auth_domain);
@@ -380,7 +382,9 @@ BEGINfreeInstance
 	free(pData->retryRulesetName);
 	free(pData->ignorableCodes);
 	if (pData->ratelimiter != NULL)
+	{
 		ratelimitDestruct(pData->ratelimiter);
+	}
 	if (pData->stats)
 	{
 		statsobj.Destruct(&pData->stats);
@@ -391,7 +395,7 @@ ENDfreeInstance
 
 
 BEGINfreeWrkrInstance
-	CODESTARTfreeWrkrInstance
+CODESTARTfreeWrkrInstance
 	curlCleanup(pWrkrData);
 
 	free(pWrkrData->restURL);
@@ -407,18 +411,20 @@ BEGINfreeWrkrInstance
 	}
 
 	if (pWrkrData->bzInitDone)
+	{
 		deflateEnd(&pWrkrData->zstrm);
+	}
 	freeCompressCtx(pWrkrData);
 
 ENDfreeWrkrInstance
 
 BEGINdbgPrintInstInfo
-	CODESTARTdbgPrintInstInfo
+CODESTARTdbgPrintInstInfo
 ENDdbgPrintInstInfo
 
 /* http POST result string ... useful for debugging */
 static size_t
-	curlResult(void *ptr, size_t size, size_t nmemb, void *userdata)
+curlResult(void *ptr, size_t size, size_t nmemb, void *userdata)
 {
 	char *p = (char *)ptr;
 	wrkrInstanceData_t *pWrkrData = (wrkrInstanceData_t *)userdata;
@@ -438,13 +444,13 @@ static size_t
 }
 
 BEGINtryResume
-	CODESTARTtryResume
+CODESTARTtryResume
 	DBGPRINTF("omsentinel: tryResume called\n");
 ENDtryResume
 
 
 static rsRetVal ATTR_NONNULL(1)
-	setPostURL(wrkrInstanceData_t *const pWrkrData)
+setPostURL(wrkrInstanceData_t *const pWrkrData)
 {
 	uchar *restPath;
 	char *baseUrl;
@@ -474,7 +480,9 @@ static rsRetVal ATTR_NONNULL(1)
 
 	r = 0;
 	if (restPath != NULL)
+	{
 		r = es_addBuf(&url, (char *)restPath, ustrlen(restPath));
+	}
 
 	if (r != 0)
 	{
@@ -485,7 +493,9 @@ static rsRetVal ATTR_NONNULL(1)
 	}
 
 	if (pWrkrData->restURL != NULL)
+	{
 		free(pWrkrData->restURL);
+	}
 
 	pWrkrData->restURL = (uchar *)es_str2cstr(url, NULL);
 	curl_easy_setopt(pWrkrData->curlPostHandle, CURLOPT_URL, pWrkrData->restURL);
@@ -493,7 +503,9 @@ static rsRetVal ATTR_NONNULL(1)
 
 finalize_it:
 	if (url != NULL)
+	{
 		es_deleteStr(url);
+	}
 	RETiRet;
 }
 
@@ -517,7 +529,9 @@ renderJsonErrorMessage(wrkrInstanceData_t *pWrkrData, uchar *reqmsg, char **rend
 	fjson_object *errRoot = NULL;
 
 	if ((req = fjson_object_new_object()) == NULL)
+	{
 		ABORT_FINALIZE(RS_RET_ERR);
+	}
 	fjson_object_object_add(req, "url", fjson_object_new_string((char *)pWrkrData->restURL));
 	fjson_object_object_add(req, "postdata", fjson_object_new_string((char *)reqmsg));
 
@@ -532,12 +546,12 @@ renderJsonErrorMessage(wrkrInstanceData_t *pWrkrData, uchar *reqmsg, char **rend
 	if (pWrkrData->reply == NULL)
 	{
 		fjson_object_object_add(res, "message",
-								fjson_object_new_string_len(ERR_MSG_NULL, strlen(ERR_MSG_NULL)));
+			fjson_object_new_string_len(ERR_MSG_NULL, strlen(ERR_MSG_NULL)));
 	}
 	else
 	{
 		fjson_object_object_add(res, "message",
-								fjson_object_new_string_len(pWrkrData->reply, pWrkrData->replyLen));
+			fjson_object_new_string_len(pWrkrData->reply, pWrkrData->replyLen));
 	}
 
 	if ((errRoot = fjson_object_new_object()) == NULL)
@@ -554,7 +568,9 @@ renderJsonErrorMessage(wrkrInstanceData_t *pWrkrData, uchar *reqmsg, char **rend
 
 finalize_it:
 	if (errRoot != NULL)
+	{
 		fjson_object_put(errRoot);
+	}
 
 	RETiRet;
 }
@@ -564,8 +580,7 @@ finalize_it:
  * needs to be closed, HUP must be sent.
  */
 static rsRetVal ATTR_NONNULL()
-	writeDataError(wrkrInstanceData_t *const pWrkrData,
-				   instanceData *const pData, uchar *const reqmsg)
+writeDataError(wrkrInstanceData_t *const pWrkrData, instanceData *const pData, uchar *const reqmsg)
 {
 	char *rendered = NULL;
 	size_t toWrite;
@@ -577,7 +592,7 @@ static rsRetVal ATTR_NONNULL()
 	if (pData->errorFile == NULL)
 	{
 		DBGPRINTF("omsentinel: no local error logger defined - "
-				  "ignoring REST error information\n");
+				"ignoring REST error information\n");
 		FINALIZE;
 	}
 
@@ -589,8 +604,8 @@ static rsRetVal ATTR_NONNULL()
 	if (pData->fdErrFile == -1)
 	{
 		pData->fdErrFile = open((char *)pData->errorFile,
-								O_WRONLY | O_CREAT | O_APPEND | O_LARGEFILE | O_CLOEXEC,
-								S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
+					O_WRONLY | O_CREAT | O_APPEND | O_LARGEFILE | O_CLOEXEC,
+					S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 		if (pData->fdErrFile == -1)
 		{
 			LogError(errno, RS_RET_ERR, "omsentinel: error opening error file %s",
@@ -607,7 +622,7 @@ static rsRetVal ATTR_NONNULL()
 	/* Note: we overwrite the '\0' terminator with '\n' -- so we avoid
 	 * caling malloc() -- write() does NOT need '\0'!
 	 */
-	rendered[toWrite - 1] = '\n'; /* NO LONGER A STRING! */
+	rendered[toWrite - 1] = '\n'; /* NO LONGER A NULL-TERMINATED STRING! */
 	wrRet = write(pData->fdErrFile, rendered, toWrite);
 	if (wrRet != (ssize_t)toWrite)
 	{
@@ -618,7 +633,9 @@ static rsRetVal ATTR_NONNULL()
 
 finalize_it:
 	if (bMutLocked)
+	{
 		pthread_mutex_unlock(&pData->mutErrFile);
+	}
 	free(rendered);
 	RETiRet;
 }
@@ -674,9 +691,7 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 	pData = pWrkrData->pData;
 	statusCode = pWrkrData->httpStatusCode;
 
-
 	numMessages = pWrkrData->batch.nmemb;
-	
 
 	// 500+ errors return RS_RET_SUSPENDED if NOT batchMode and should be retried
 	// status 0 is the default and the request failed for some reason, retry this too
@@ -794,7 +809,9 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 		writeDataError(pWrkrData, pWrkrData->pData, reqmsg);
 
 		if (iRet == RS_RET_DATAFAIL)
+		{
 			ABORT_FINALIZE(iRet);
+		}
 
 		if (pData->maxBatchSize > 1)
 		{
@@ -871,10 +888,14 @@ compressHttpPayload(wrkrInstanceData_t *pWrkrData, uchar *message, unsigned len)
 		DBGPRINTF("omsentinel: compressHttpPayload after deflate, ret %d, avail_out %d\n",
 				  zRet, pWrkrData->zstrm.avail_out);
 		if (zRet != Z_OK)
+		{
 			ABORT_FINALIZE(RS_RET_ZLIB_ERR);
+		}
 		outavail = sizeof(zipBuf) - pWrkrData->zstrm.avail_out;
 		if (outavail != 0)
+		{
 			CHKiRet(appendCompressCtx(pWrkrData, zipBuf, outavail));
+		}
 
 	} while (pWrkrData->zstrm.avail_out == 0);
 
@@ -887,19 +908,23 @@ compressHttpPayload(wrkrInstanceData_t *pWrkrData, uchar *message, unsigned len)
 		deflate(&pWrkrData->zstrm, Z_FINISH); /* returns Z_STREAM_END == 1 */
 		outavail = sizeof(zipBuf) - pWrkrData->zstrm.avail_out;
 		if (outavail != 0)
+		{
 			CHKiRet(appendCompressCtx(pWrkrData, zipBuf, outavail));
+		}
 
 	} while (pWrkrData->zstrm.avail_out == 0);
 
 finalize_it:
 	if (pWrkrData->bzInitDone)
+	{
 		deflateEnd(&pWrkrData->zstrm);
+	}
 	pWrkrData->bzInitDone = 0;
 	RETiRet;
 }
 
 static void ATTR_NONNULL()
-	initCompressCtx(wrkrInstanceData_t *pWrkrData)
+initCompressCtx(wrkrInstanceData_t *pWrkrData)
 {
 	pWrkrData->compressCtx.buf = NULL;
 	pWrkrData->compressCtx.curLen = 0;
@@ -907,7 +932,7 @@ static void ATTR_NONNULL()
 }
 
 static void ATTR_NONNULL()
-	freeCompressCtx(wrkrInstanceData_t *pWrkrData)
+freeCompressCtx(wrkrInstanceData_t *pWrkrData)
 {
 	if (pWrkrData->compressCtx.buf != NULL)
 	{
@@ -917,7 +942,7 @@ static void ATTR_NONNULL()
 }
 
 static rsRetVal ATTR_NONNULL()
-	resetCompressCtx(wrkrInstanceData_t *pWrkrData, size_t len)
+resetCompressCtx(wrkrInstanceData_t *pWrkrData, size_t len)
 {
 	DEFiRet;
 	pWrkrData->compressCtx.curLen = 0;
@@ -926,12 +951,14 @@ static rsRetVal ATTR_NONNULL()
 
 finalize_it:
 	if (iRet != RS_RET_OK)
+	{
 		freeCompressCtx(pWrkrData);
+	}
 	RETiRet;
 }
 
 static rsRetVal ATTR_NONNULL()
-	growCompressCtx(wrkrInstanceData_t *pWrkrData, size_t newLen)
+growCompressCtx(wrkrInstanceData_t *pWrkrData, size_t newLen)
 {
 	DEFiRet;
 	if (pWrkrData->compressCtx.buf == NULL)
@@ -950,20 +977,23 @@ finalize_it:
 }
 
 static rsRetVal ATTR_NONNULL()
-	appendCompressCtx(wrkrInstanceData_t *pWrkrData, uchar *srcBuf, size_t srcLen)
+appendCompressCtx(wrkrInstanceData_t *pWrkrData, uchar *srcBuf, size_t srcLen)
 {
 	size_t newLen;
 	DEFiRet;
 	newLen = pWrkrData->compressCtx.curLen + srcLen;
 	if (newLen > pWrkrData->compressCtx.len)
+	{
 		CHKiRet(growCompressCtx(pWrkrData, newLen));
+	}
 
-	memcpy(pWrkrData->compressCtx.buf + pWrkrData->compressCtx.curLen,
-		   srcBuf, srcLen);
+	memcpy(pWrkrData->compressCtx.buf + pWrkrData->compressCtx.curLen, srcBuf, srcLen);
 	pWrkrData->compressCtx.curLen = newLen;
 finalize_it:
 	if (iRet != RS_RET_OK)
+	{
 		freeCompressCtx(pWrkrData);
+	}
 	RETiRet;
 }
 
@@ -972,17 +1002,13 @@ finalize_it:
  * Additionally, the curlCheckConnHandle should not be configured with a gzip header.
  */
 static rsRetVal ATTR_NONNULL()
-	buildCurlHeaders(wrkrInstanceData_t *pWrkrData, sbool contentEncodeGzip)
+buildCurlHeaders(wrkrInstanceData_t *pWrkrData, sbool contentEncodeGzip)
 {
 	struct curl_slist *slist = NULL;
 
 	DEFiRet;
 
-
-
 	slist = curl_slist_append(slist, HTTP_HEADER_CONTENT_JSON);
-	
-	
 
 	CHKmalloc(slist);
 
@@ -1011,7 +1037,9 @@ static rsRetVal ATTR_NONNULL()
 	}
 
 	if (pWrkrData->curlHeader != NULL)
+	{
 		curl_slist_free_all(pWrkrData->curlHeader);
+	}
 
 	pWrkrData->curlHeader = slist;
 
@@ -1030,7 +1058,6 @@ size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp)
 	size_t totalSize = size * nmemb;
 
 	pData->authReply = (uchar *)strdup((const char *)contents);
-
 
 	return totalSize;
 }
@@ -1083,7 +1110,8 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 				{
 					if(!(pData->token = (uchar *)strdup(tokenStr)))
 					{
-						LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: could not allocate Bearer token \n");
+						LogError(0, RS_RET_OUT_OF_MEMORY,
+							"omsentinel: could not allocate Bearer token \n");
 						ABORT_FINALIZE(RS_RET_ERR);
 					}
 				}
@@ -1094,16 +1122,18 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 				const int expireDate = json_object_get_int(expires_in);
 				if (expireDate)
 				{
-					pData->authExp = time(NULL) + expireDate; // calcul de la date d'expiration du token avec le timestamp actuel
+					// Calculation of the expiration date from now
+					pData->authExp = time(NULL) + expireDate;
 				}
 			}
 			json_object_put(parsed_json);
 		}
-    }else{
+	}
+	else
+	{
 		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: could not allocate http response \n");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
-	
 
 	// httpHeader
 	if (asprintf((char **)&pData->httpHeader, (char *)pData->authorizationHeader, pData->token) < 0)
@@ -1118,8 +1148,7 @@ finalize_it:
 }
 
 static rsRetVal ATTR_NONNULL(1, 2)
-	curlPost(wrkrInstanceData_t *pWrkrData, uchar *message, int msglen,
-			 const int nmsgs __attribute__((unused)))
+curlPost(wrkrInstanceData_t *pWrkrData, uchar *message, int msglen, const int nmsgs __attribute__((unused)))
 {
 
 	CURLcode curlCode;
@@ -1281,7 +1310,7 @@ computeBatchSize(wrkrInstanceData_t *pWrkrData)
 }
 
 static void ATTR_NONNULL()
-	initializeBatch(wrkrInstanceData_t *pWrkrData)
+initializeBatch(wrkrInstanceData_t *pWrkrData)
 {
 	pWrkrData->batch.sizeBytes = 0;
 	pWrkrData->batch.nmemb = 0;
@@ -1302,7 +1331,7 @@ buildBatch(wrkrInstanceData_t *pWrkrData, uchar *message)
 	if (pWrkrData->batch.nmemb >= pWrkrData->pData->maxBatchSize)
 	{
 		LogError(0, RS_RET_ERR, "omsentinel: buildBatch something has gone wrong,"
-								"number of messages in batch is bigger than the max batch size, bailing");
+				"number of messages in batch is bigger than the max batch size, bailing");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 	pWrkrData->batch.data[pWrkrData->batch.nmemb] = message;
@@ -1322,7 +1351,9 @@ submitBatch(wrkrInstanceData_t *pWrkrData, uchar **tpls)
 	iRet = serializeBatchJsonArray(pWrkrData, &batchBuf);
 
 	if (iRet != RS_RET_OK || batchBuf == NULL)
+	{
 		ABORT_FINALIZE(iRet);
+	}
 
 	DBGPRINTF("omsentinel: submitBatch, batch: '%s' tpls: '%p'\n", batchBuf, tpls);
 
@@ -1330,22 +1361,30 @@ submitBatch(wrkrInstanceData_t *pWrkrData, uchar **tpls)
 
 finalize_it:
 	if (batchBuf != NULL)
+	{
 		free(batchBuf);
+	}
 	RETiRet;
 }
 
 BEGINbeginTransaction
-	CODESTARTbeginTransaction 
+CODESTARTbeginTransaction
 	instanceData *pData = pWrkrData->pData;
 
 	if (time(NULL) >= pData->authExp && pData->token)
 	{
 		if (pData->authReply)
+		{
 			free(pData->authReply);
+		}
 		if (pData->token)
+		{
 			free(pData->token);
+		}
 		if (pData->httpHeader)
+		{
 			free(pData->httpHeader);
+		}
 
 		// nullify to prevent dangling pointers
 		pData->token = NULL;
@@ -1355,14 +1394,13 @@ BEGINbeginTransaction
 		curlAuth(pWrkrData, pData->authParams);
 	}
 
-
 	initializeBatch(pWrkrData);
 ENDbeginTransaction
 
 BEGINdoAction
 	size_t nBytes;
 	sbool submit;
-	CODESTARTdoAction 
+CODESTARTdoAction
 	instanceData *const pData = pWrkrData->pData;
 
 	STATSCOUNTER_INC(ctrMessagesSubmitted, mutCtrMessagesSubmitted);
@@ -1414,7 +1452,7 @@ BEGINdoAction
 		* committed so that all items leading up to the current (exclusive)
 		* are not replayed should a failure occur anywhere else in the transaction. */
 		iRet = pWrkrData->batch.nmemb == 1 ? RS_RET_PREVIOUS_COMMITTED : RS_RET_DEFER_COMMIT;
-		
+
 	}
 	else
 	{
@@ -1422,11 +1460,11 @@ BEGINdoAction
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 
-finalize_it : 
+finalize_it:
 ENDdoAction
 
 BEGINendTransaction
-	CODESTARTendTransaction
+CODESTARTendTransaction
 	/* End Transaction only if batch data is not empty */
 	if (pWrkrData->batch.nmemb > 0)
 	{
@@ -1437,12 +1475,11 @@ BEGINendTransaction
 		dbgprintf("omsentinel: endTransaction, pWrkrData->batch.nmemb = 0, "
 				"nothing to send. \n");
 	}
-finalize_it: 
+finalize_it:
 ENDendTransaction
 
-			  static void
-			  ATTR_NONNULL()
-				  curlSetupCommon(wrkrInstanceData_t *const pWrkrData, CURL *const handle)
+static void ATTR_NONNULL()
+curlSetupCommon(wrkrInstanceData_t *const pWrkrData, CURL *const handle)
 {
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
 	curl_easy_setopt(handle, CURLOPT_HTTPHEADER, pWrkrData->curlHeader);
@@ -1463,24 +1500,30 @@ ENDendTransaction
 		curl_easy_setopt(handle, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
 	}
 	if (pWrkrData->pData->caCertFile)
+	{
 		curl_easy_setopt(handle, CURLOPT_CAINFO, pWrkrData->pData->caCertFile);
+	}
 	if (pWrkrData->pData->myCertFile)
+	{
 		curl_easy_setopt(handle, CURLOPT_SSLCERT, pWrkrData->pData->myCertFile);
+	}
 	if (pWrkrData->pData->myPrivKeyFile)
+	{
 		curl_easy_setopt(handle, CURLOPT_SSLKEY, pWrkrData->pData->myPrivKeyFile);
-	/* uncomment for in-dept debuggung:
+	}
+	/* uncomment for in-depth debugging:
 	curl_easy_setopt(handle, CURLOPT_VERBOSE, TRUE); */
 }
 
 static void ATTR_NONNULL()
-	curlCheckConnSetup(wrkrInstanceData_t *const pWrkrData)
+curlCheckConnSetup(wrkrInstanceData_t *const pWrkrData)
 {
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
 	curlSetupCommon(pWrkrData, pWrkrData->curlCheckConnHandle);
 }
 
 static void ATTR_NONNULL(1)
-	curlPostSetup(wrkrInstanceData_t *const pWrkrData)
+curlPostSetup(wrkrInstanceData_t *const pWrkrData)
 {
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
 	curlSetupCommon(pWrkrData, pWrkrData->curlPostHandle);
@@ -1489,19 +1532,25 @@ static void ATTR_NONNULL(1)
 	/* Enable TCP keep-alive for this transfer */
 	cRet = curl_easy_setopt(pWrkrData->curlPostHandle, CURLOPT_TCP_KEEPALIVE, 1L);
 	if (cRet != CURLE_OK)
+	{
 		DBGPRINTF("omsentinel: curlPostSetup unknown option CURLOPT_TCP_KEEPALIVE\n");
+	}
 	/* keep-alive idle time to 120 seconds */
 	cRet = curl_easy_setopt(pWrkrData->curlPostHandle, CURLOPT_TCP_KEEPIDLE, 120L);
 	if (cRet != CURLE_OK)
+	{
 		DBGPRINTF("omsentinel: curlPostSetup unknown option CURLOPT_TCP_KEEPIDLE\n");
+	}
 	/* interval time between keep-alive probes: 60 seconds */
 	cRet = curl_easy_setopt(pWrkrData->curlPostHandle, CURLOPT_TCP_KEEPINTVL, 60L);
 	if (cRet != CURLE_OK)
+	{
 		DBGPRINTF("omsentinel: curlPostSetup unknown option CURLOPT_TCP_KEEPINTVL\n");
+	}
 }
 
 static rsRetVal ATTR_NONNULL()
-	curlSetup(wrkrInstanceData_t *const pWrkrData)
+curlSetup(wrkrInstanceData_t *const pWrkrData)
 {
 	struct curl_slist *slist = NULL;
 
@@ -1540,7 +1589,9 @@ finalize_it:
 	RETiRet;
 }
 
-static void ATTR_NONNULL() curlCleanup(wrkrInstanceData_t *const pWrkrData){
+static void ATTR_NONNULL()
+curlCleanup(wrkrInstanceData_t *const pWrkrData)
+{
 	if (pWrkrData->curlHeader != NULL)
 	{
 		curl_slist_free_all(pWrkrData->curlHeader);
@@ -1559,7 +1610,7 @@ static void ATTR_NONNULL() curlCleanup(wrkrInstanceData_t *const pWrkrData){
 }
 
 static void ATTR_NONNULL()
-	setInstParamDefaults(instanceData *const pData)
+setInstParamDefaults(instanceData *const pData)
 {
 	pData->dcr = NULL;
 	pData->dce = NULL;
@@ -1582,10 +1633,10 @@ static void ATTR_NONNULL()
 	pData->restPath = NULL;
 	pData->proxyHost = NULL;
 	pData->proxyPort = 0;
-	pData->maxBatchBytes = 10485760; // i.e. 10 MB Is the default max message size for AWS API Gateway
-	pData->maxBatchSize = 1;		 // 100 messages
-	pData->compress = 0;			 // off
-	pData->compressionLevel = -1;	 // default compression
+	pData->maxBatchBytes = 10485760;	// i.e. 10 MB Is the default max message size for AWS API Gateway
+	pData->maxBatchSize = 1;		// 100 messages
+	pData->compress = 0;			// off
+	pData->compressionLevel = -1;		// default compression
 	pData->tplName = NULL;
 	pData->errorFile = NULL;
 	pData->caCertFile = NULL;
@@ -1611,10 +1662,10 @@ BEGINnewActInst struct cnfparamvals *pvals;
 	FILE *fp;
 	char errStr[1024];
 	int compressionLevel = -1;
-	CODESTARTnewActInst 
+CODESTARTnewActInst
 	if ((pvals = nvlstGetParams(lst, &actpblk, NULL)) == NULL)
 	{
-	ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
+		ABORT_FINALIZE(RS_RET_MISSING_CNFPARAMS);
 	}
 
 	CHKiRet(createInstance(&pData));
@@ -1622,210 +1673,212 @@ BEGINnewActInst struct cnfparamvals *pvals;
 
 	for (i = 0; i < actpblk.nParams; ++i)
 	{
-	if (!pvals[i].bUsed)
-		continue;
-	if (!strcmp(actpblk.descr[i].name, "dce"))
-	{
-		pData->dce = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "errorfile"))
-	{
-		pData->errorFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "dcr"))
-	{
-		pData->dcr = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "stream_name"))
-	{
-		pData->stream_name = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "restpath"))
-	{
-		pData->restPath = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "client_secret"))
-	{
-		pData->client_secret = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "client_id"))
-	{
-		pData->client_id = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "tenant_id"))
-	{
-		pData->tenant_id = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "scope"))
-	{
-		pData->scope = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "grant_type"))
-	{
-		pData->grant_type = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "auth_domain"))
-	{
-		pData->auth_domain = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "proxyhost"))
-	{
-		pData->proxyHost = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "proxyport"))
-	{
-		pData->proxyPort = (int)pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "batch.maxbytes"))
-	{
-		pData->maxBatchBytes = (size_t)pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "batch.maxsize"))
-	{
-		pData->maxBatchSize = (size_t)pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "compress"))
-	{
-		pData->compress = pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "compress.level"))
-	{
-		compressionLevel = pvals[i].val.d.n;
-		if (compressionLevel == -1 || (compressionLevel >= 0 && compressionLevel < 10))
+		if (!pvals[i].bUsed)
 		{
-			pData->compressionLevel = compressionLevel;
+			continue;
 		}
-		else
+		if (!strcmp(actpblk.descr[i].name, "dce"))
 		{
-			LogError(0, NO_ERRCODE, "omsentinel: invalid compress.level %d using default instead,"
-									"valid levels are -1 and 0-9",
-						compressionLevel);
+			pData->dce = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
 		}
-	}
-	else if (!strcmp(actpblk.descr[i].name, "template"))
-	{
-		pData->tplName = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "tls.cacert"))
-	{
-		pData->caCertFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-		fp = fopen((const char *)pData->caCertFile, "r");
-		if (fp == NULL)
+		else if (!strcmp(actpblk.descr[i].name, "errorfile"))
 		{
-			rs_strerror_r(errno, errStr, sizeof(errStr));
-			LogError(0, RS_RET_NO_FILE_ACCESS,
+			pData->errorFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "dcr"))
+		{
+			pData->dcr = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "stream_name"))
+		{
+			pData->stream_name = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "restpath"))
+		{
+			pData->restPath = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "client_secret"))
+		{
+			pData->client_secret = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "client_id"))
+		{
+			pData->client_id = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "tenant_id"))
+		{
+			pData->tenant_id = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "scope"))
+		{
+			pData->scope = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "grant_type"))
+		{
+			pData->grant_type = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "auth_domain"))
+		{
+			pData->auth_domain = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "proxyhost"))
+		{
+			pData->proxyHost = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "proxyport"))
+		{
+			pData->proxyPort = (int)pvals[i].val.d.n;
+		}
+		else if (!strcmp(actpblk.descr[i].name, "batch.maxbytes"))
+		{
+			pData->maxBatchBytes = (size_t)pvals[i].val.d.n;
+		}
+		else if (!strcmp(actpblk.descr[i].name, "batch.maxsize"))
+		{
+			pData->maxBatchSize = (size_t)pvals[i].val.d.n;
+		}
+		else if (!strcmp(actpblk.descr[i].name, "compress"))
+		{
+			pData->compress = pvals[i].val.d.n;
+		}
+		else if (!strcmp(actpblk.descr[i].name, "compress.level"))
+		{
+			compressionLevel = pvals[i].val.d.n;
+			if (compressionLevel == -1 || (compressionLevel >= 0 && compressionLevel < 10))
+			{
+				pData->compressionLevel = compressionLevel;
+			}
+			else
+			{
+				LogError(0, NO_ERRCODE, "omsentinel: invalid compress.level %d using default instead,"
+							"valid levels are -1 and 0-9",
+							compressionLevel);
+			}
+		}
+		else if (!strcmp(actpblk.descr[i].name, "template"))
+		{
+			pData->tplName = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "tls.cacert"))
+		{
+			pData->caCertFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+			fp = fopen((const char *)pData->caCertFile, "r");
+			if (fp == NULL)
+			{
+				rs_strerror_r(errno, errStr, sizeof(errStr));
+				LogError(0, RS_RET_NO_FILE_ACCESS,
 						"error: 'tls.cacert' file %s couldn't be accessed: %s\n",
 						pData->caCertFile, errStr);
-		}
-		else
-		{
-			fclose(fp);
-		}
-	}
-	else if (!strcmp(actpblk.descr[i].name, "tls.mycert"))
-	{
-		pData->myCertFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-		fp = fopen((const char *)pData->myCertFile, "r");
-		if (fp == NULL)
-		{
-			rs_strerror_r(errno, errStr, sizeof(errStr));
-			LogError(0, RS_RET_NO_FILE_ACCESS,
-						"error: 'tls.mycert' file %s couldn't be accessed: %s\n",
-						pData->myCertFile, errStr);
-		}
-		else
-		{
-			fclose(fp);
-		}
-	}
-	else if (!strcmp(actpblk.descr[i].name, "tls.myprivkey"))
-	{
-		pData->myPrivKeyFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-		fp = fopen((const char *)pData->myPrivKeyFile, "r");
-		if (fp == NULL)
-		{
-			rs_strerror_r(errno, errStr, sizeof(errStr));
-			LogError(0, RS_RET_NO_FILE_ACCESS,
-						"error: 'tls.myprivkey' file %s couldn't be accessed: %s\n",
-						pData->myPrivKeyFile, errStr);
-		}
-		else
-		{
-			fclose(fp);
-		}
-	}
-	else if (!strcmp(actpblk.descr[i].name, "httpretrycodes"))
-	{
-		pData->nhttpRetryCodes = pvals[i].val.d.ar->nmemb;
-		// note: use zero as sentinel value
-		CHKmalloc(pData->httpRetryCodes = calloc(pvals[i].val.d.ar->nmemb, sizeof(unsigned int)));
-		int count = 0;
-		for (int j = 0; j < pvals[i].val.d.ar->nmemb; ++j)
-		{
-			int bSuccess = 0;
-			long long n = es_str2num(pvals[i].val.d.ar->arr[j], &bSuccess);
-			if (!bSuccess)
-			{
-				char *cstr = es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
-				LogError(0, RS_RET_NO_FILE_ACCESS,
-							"error: 'httpRetryCode' '%s' is not a number - ignored\n", cstr);
-				free(cstr);
 			}
 			else
 			{
-				pData->httpRetryCodes[count++] = n;
+				fclose(fp);
 			}
 		}
-	}
-	else if (!strcmp(actpblk.descr[i].name, "retry"))
-	{
-		pData->retryFailures = pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "retry.ruleset"))
-	{
-		pData->retryRulesetName = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "ratelimit.burst"))
-	{
-		pData->ratelimitBurst = (unsigned int)pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "ratelimit.interval"))
-	{
-		pData->ratelimitInterval = (unsigned int)pvals[i].val.d.n;
-	}
-	else if (!strcmp(actpblk.descr[i].name, "name"))
-	{
-		pData->statsName = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
-	}
-	else if (!strcmp(actpblk.descr[i].name, "httpignorablecodes"))
-	{
-		pData->nIgnorableCodes = pvals[i].val.d.ar->nmemb;
-		// note: use zero as sentinel value
-		CHKmalloc(pData->ignorableCodes = calloc(pvals[i].val.d.ar->nmemb, sizeof(unsigned int)));
-		int count = 0;
-		for (int j = 0; j < pvals[i].val.d.ar->nmemb; ++j)
+		else if (!strcmp(actpblk.descr[i].name, "tls.mycert"))
 		{
-			int bSuccess = 0;
-			long long n = es_str2num(pvals[i].val.d.ar->arr[j], &bSuccess);
-			if (!bSuccess)
+			pData->myCertFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+			fp = fopen((const char *)pData->myCertFile, "r");
+			if (fp == NULL)
 			{
-				char *cstr = es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
+				rs_strerror_r(errno, errStr, sizeof(errStr));
 				LogError(0, RS_RET_NO_FILE_ACCESS,
-							"error: 'httpIgnorableCodes' '%s' is not a number - ignored\n", cstr);
-				free(cstr);
+				"error: 'tls.mycert' file %s couldn't be accessed: %s\n",
+				pData->myCertFile, errStr);
 			}
 			else
 			{
-				pData->ignorableCodes[count++] = n;
+				fclose(fp);
 			}
 		}
-	}
-	else
-	{
-		LogError(0, RS_RET_INTERNAL_ERROR, "omsentinel: program error, "
-											"non-handled param '%s'",
-					actpblk.descr[i].name);
-	}
+		else if (!strcmp(actpblk.descr[i].name, "tls.myprivkey"))
+		{
+			pData->myPrivKeyFile = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+			fp = fopen((const char *)pData->myPrivKeyFile, "r");
+			if (fp == NULL)
+			{
+				rs_strerror_r(errno, errStr, sizeof(errStr));
+				LogError(0, RS_RET_NO_FILE_ACCESS,
+					"error: 'tls.myprivkey' file %s couldn't be accessed: %s\n",
+					pData->myPrivKeyFile, errStr);
+			}
+			else
+			{
+				fclose(fp);
+			}
+		}
+		else if (!strcmp(actpblk.descr[i].name, "httpretrycodes"))
+		{
+			pData->nhttpRetryCodes = pvals[i].val.d.ar->nmemb;
+			// note: use zero as sentinel value
+			CHKmalloc(pData->httpRetryCodes = calloc(pvals[i].val.d.ar->nmemb, sizeof(unsigned int)));
+			int count = 0;
+			for (int j = 0; j < pvals[i].val.d.ar->nmemb; ++j)
+			{
+				int bSuccess = 0;
+				long long n = es_str2num(pvals[i].val.d.ar->arr[j], &bSuccess);
+				if (!bSuccess)
+				{
+					char *cstr = es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
+					LogError(0, RS_RET_NO_FILE_ACCESS,
+						"error: 'httpRetryCode' '%s' is not a number - ignored\n", cstr);
+					free(cstr);
+				}
+				else
+				{
+					pData->httpRetryCodes[count++] = n;
+				}
+			}
+		}
+		else if (!strcmp(actpblk.descr[i].name, "retry"))
+		{
+			pData->retryFailures = pvals[i].val.d.n;
+		}
+		else if (!strcmp(actpblk.descr[i].name, "retry.ruleset"))
+		{
+			pData->retryRulesetName = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "ratelimit.burst"))
+		{
+			pData->ratelimitBurst = (unsigned int)pvals[i].val.d.n;
+		}
+		else if (!strcmp(actpblk.descr[i].name, "ratelimit.interval"))
+		{
+			pData->ratelimitInterval = (unsigned int)pvals[i].val.d.n;
+		}
+		else if (!strcmp(actpblk.descr[i].name, "name"))
+		{
+			pData->statsName = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		}
+		else if (!strcmp(actpblk.descr[i].name, "httpignorablecodes"))
+		{
+			pData->nIgnorableCodes = pvals[i].val.d.ar->nmemb;
+			// note: use zero as sentinel value
+			CHKmalloc(pData->ignorableCodes = calloc(pvals[i].val.d.ar->nmemb, sizeof(unsigned int)));
+			int count = 0;
+			for (int j = 0; j < pvals[i].val.d.ar->nmemb; ++j)
+			{
+				int bSuccess = 0;
+				long long n = es_str2num(pvals[i].val.d.ar->arr[j], &bSuccess);
+				if (!bSuccess)
+				{
+					char *cstr = es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
+					LogError(0, RS_RET_NO_FILE_ACCESS,
+						"error: 'httpIgnorableCodes' '%s' is not a number - ignored\n", cstr);
+					free(cstr);
+				}
+				else
+				{
+					pData->ignorableCodes[count++] = n;
+				}
+			}
+		}
+		else
+		{
+			LogError(0, RS_RET_INTERNAL_ERROR, "omsentinel: program error, "
+				"non-handled param '%s'",
+				actpblk.descr[i].name);
+		}
 	}
 
 	if (pData->proxyHost == NULL)
@@ -1844,8 +1897,9 @@ BEGINnewActInst struct cnfparamvals *pvals;
 	DBGPRINTF("omsentinel: requesting %d templates\n", iNumTpls);
 	CODE_STD_STRING_REQUESTnewActInst(iNumTpls)
 
-		CHKiRet(OMSRsetEntry(*ppOMSR, 0, (uchar *)strdup((pData->tplName == NULL) ? " StdJSONFmt" : (char *)pData->tplName),
-							OMSR_NO_RQD_TPL_OPTS));
+		CHKiRet(OMSRsetEntry(*ppOMSR, 0,
+			(uchar *)strdup((pData->tplName == NULL) ? " StdJSONFmt" : (char *)pData->tplName),
+			OMSR_NO_RQD_TPL_OPTS));
 
 	if (pData->retryFailures)
 	{
@@ -1867,39 +1921,39 @@ BEGINnewActInst struct cnfparamvals *pvals;
 
 	STATSCOUNTER_INIT(pData->ctrHttpRequestsCount, pData->mutCtrHttpRequestsCount);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.count",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsCount));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsCount));
 
 	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus0xx, pData->mutCtrHttpRequestsStatus0xx);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.0xx",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus0xx));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus0xx));
 
 	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus1xx, pData->mutCtrHttpRequestsStatus1xx);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.1xx",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus1xx));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus1xx));
 
 	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus2xx, pData->mutCtrHttpRequestsStatus2xx);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.2xx",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus2xx));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus2xx));
 
 	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus3xx, pData->mutCtrHttpRequestsStatus3xx);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.3xx",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus3xx));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus3xx));
 
 	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus4xx, pData->mutCtrHttpRequestsStatus4xx);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.4xx",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus4xx));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus4xx));
 
 	STATSCOUNTER_INIT(pData->ctrHttpRequestsStatus5xx, pData->mutCtrHttpRequestsStatus5xx);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.status.5xx",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus5xx));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->ctrHttpRequestsStatus5xx));
 
 	STATSCOUNTER_INIT(pData->httpRequestsBytes, pData->mutHttpRequestsBytes);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.bytes",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->httpRequestsBytes));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->httpRequestsBytes));
 
 	STATSCOUNTER_INIT(pData->httpRequestsTimeMs, pData->mutHttpRequestsTimeMs);
 	CHKiRet(statsobj.AddCounter(pData->stats, (uchar *)"requests.time_ms",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->httpRequestsTimeMs));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pData->httpRequestsTimeMs));
 
 	CHKiRet(statsobj.ConstructFinalize(pData->stats));
 
@@ -1914,25 +1968,25 @@ BEGINnewActInst struct cnfparamvals *pvals;
 		loadModConf->tail = pData;
 	}
 
-	CODE_STD_FINALIZERnewActInst
+CODE_STD_FINALIZERnewActInst
 	cnfparamvalsDestruct(pvals, &actpblk);
 ENDnewActInst
 
 BEGINbeginCnfLoad
-	CODESTARTbeginCnfLoad
+CODESTARTbeginCnfLoad
 	loadModConf = pModConf;
 	pModConf->pConf = pConf;
 	pModConf->root = pModConf->tail = NULL;
 ENDbeginCnfLoad
 
 BEGINendCnfLoad
-	CODESTARTendCnfLoad
+CODESTARTendCnfLoad
 	loadModConf = NULL; /* done loading */
 ENDendCnfLoad
-	
-BEGINcheckCnf 
+
+BEGINcheckCnf
 	instanceConf_t *inst;
-	CODESTARTcheckCnf 
+CODESTARTcheckCnf
 
 	for (inst = pModConf->root; inst != NULL; inst = inst->next)
 	{
@@ -1945,7 +1999,7 @@ BEGINcheckCnf
 			if (localRet == RS_RET_NOT_FOUND)
 			{
 				LogError(0, localRet, "omsentinel: retry.ruleset '%s' not found - "
-									"no retry ruleset will be used",
+						"no retry ruleset will be used",
 						inst->retryRulesetName);
 			}
 			else
@@ -1957,16 +2011,16 @@ BEGINcheckCnf
 ENDcheckCnf
 
 BEGINactivateCnf
-	CODESTARTactivateCnf
+CODESTARTactivateCnf
 ENDactivateCnf
 
 BEGINfreeCnf
-	CODESTARTfreeCnf
+CODESTARTfreeCnf
 ENDfreeCnf
 
 // HUP handling for the instance...
 BEGINdoHUP
-	CODESTARTdoHUP
+CODESTARTdoHUP
 	pthread_mutex_lock(&pData->mutErrFile);
 	if (pData->fdErrFile != -1)
 	{
@@ -1982,8 +2036,11 @@ CODESTARTdoHUPWrkr
 ENDdoHUPWrkr
 
 BEGINmodExit
-	CODESTARTmodExit 
-	if (pInputName != NULL) prop.Destruct(&pInputName);
+CODESTARTmodExit
+	if (pInputName != NULL)
+	{
+		prop.Destruct(&pInputName);
+	}
 	curl_global_cleanup();
 	objRelease(prop, CORE_COMPONENT);
 	objRelease(ruleset, CORE_COMPONENT);
@@ -1993,22 +2050,22 @@ ENDmodExit
 
 NO_LEGACY_CONF_parseSelectorAct
 
-	BEGINqueryEtryPt CODESTARTqueryEtryPt
+BEGINqueryEtryPt CODESTARTqueryEtryPt
 CODEqueryEtryPt_STD_OMOD_QUERIES
 CODEqueryEtryPt_STD_OMOD8_QUERIES
 CODEqueryEtryPt_IsCompatibleWithFeature_IF_OMOD_QUERIES
 CODEqueryEtryPt_STD_CONF2_OMOD_QUERIES
 CODEqueryEtryPt_doHUP
-CODEqueryEtryPt_doHUPWrkr			  /* Load the worker HUP handling code */
-	CODEqueryEtryPt_TXIF_OMOD_QUERIES /* we support the transactional interface! */
-		CODEqueryEtryPt_STD_CONF2_QUERIES
+CODEqueryEtryPt_doHUPWrkr		/* Load the worker HUP handling code */
+CODEqueryEtryPt_TXIF_OMOD_QUERIES	/* we support the transactional interface! */
+CODEqueryEtryPt_STD_CONF2_QUERIES
 ENDqueryEtryPt
 
 BEGINmodInit()
-	CODESTARTmodInit
+CODESTARTmodInit
 	*ipIFVersProvided = CURR_MOD_IF_VERSION; /* we only support the current interface specification */
-	CODEmodInit_QueryRegCFSLineHdlr
-		CHKiRet(objUse(prop, CORE_COMPONENT));
+CODEmodInit_QueryRegCFSLineHdlr
+	CHKiRet(objUse(prop, CORE_COMPONENT));
 	CHKiRet(objUse(ruleset, CORE_COMPONENT));
 	CHKiRet(objUse(statsobj, CORE_COMPONENT));
 
@@ -2018,39 +2075,39 @@ BEGINmodInit()
 
 	STATSCOUNTER_INIT(ctrMessagesSubmitted, mutCtrMessagesSubmitted);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.submitted",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesSubmitted));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesSubmitted));
 
 	STATSCOUNTER_INIT(ctrMessagesSuccess, mutCtrMessagesSuccess);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.success",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesSuccess));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesSuccess));
 
 	STATSCOUNTER_INIT(ctrMessagesFail, mutCtrMessagesFail);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.fail",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesFail));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesFail));
 
 	STATSCOUNTER_INIT(ctrMessagesRetry, mutCtrMessagesRetry);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"messages.retry",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesRetry));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrMessagesRetry));
 
 	STATSCOUNTER_INIT(ctrHttpRequestCount, mutCtrHttpRequestCount);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.count",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestCount));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestCount));
 
 	STATSCOUNTER_INIT(ctrHttpRequestSuccess, mutCtrHttpRequestSuccess);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.success",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestSuccess));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestSuccess));
 
 	STATSCOUNTER_INIT(ctrHttpRequestFail, mutCtrHttpRequestFail);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.fail",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestFail));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpRequestFail));
 
 	STATSCOUNTER_INIT(ctrHttpStatusSuccess, mutCtrHttpStatusSuccess);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.status.success",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpStatusSuccess));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpStatusSuccess));
 
 	STATSCOUNTER_INIT(ctrHttpStatusFail, mutCtrHttpStatusFail);
 	CHKiRet(statsobj.AddCounter(httpStats, (uchar *)"request.status.fail",
-								ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpStatusFail));
+					ctrType_IntCtr, CTR_FLAG_RESETTABLE, &ctrHttpStatusFail));
 
 	CHKiRet(statsobj.ConstructFinalize(httpStats));
 
@@ -2065,5 +2122,4 @@ BEGINmodInit()
 	CHKiRet(prop.ConstructFinalize(pInputName));
 ENDmodInit
 
-	/* vi:set ai:
-	 */
+/* vi:set ai: */
