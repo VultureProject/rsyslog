@@ -1099,6 +1099,23 @@ fi
 AM_CONDITIONAL(ENABLE_CLICKHOUSE, test x$enable_clickhouse = xyes)
 
 
+# omsentinel support
+AC_ARG_ENABLE(omsentinel,
+        [AS_HELP_STRING([--enable-omsentinel],[Enable Microsoft Sentinel output module @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_omsentinel="yes" ;;
+          no) enable_omsentinel="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-omsentinel) ;;
+         esac],
+        [enable_omsentinel=no]
+)
+if test "x$enable_omsentinel" = "xyes"; then
+        PKG_CHECK_MODULES([CURL], [libcurl])
+        LT_LIB_M
+fi
+AM_CONDITIONAL(ENABLE_OMSENTINEL, test x$enable_omsentinel = xyes)
+
+
 # omhttp support
 AC_ARG_ENABLE(omhttp,
         [AS_HELP_STRING([--enable-omhttp],[Enable http output module @<:@default=no@:>@])],
@@ -3032,6 +3049,7 @@ AC_CONFIG_FILES([Makefile \
 		plugins/omgssapi/Makefile \
 		plugins/ommysql/Makefile \
 		plugins/ompgsql/Makefile \
+		plugins/omsentinel/Makefile \
 		plugins/omrelp/Makefile \
 		plugins/omlibdbi/Makefile \
 		plugins/ommail/Makefile \
@@ -3170,6 +3188,7 @@ echo "    omkafka module will be compiled:          $enable_omkafka"
 echo "    omhiredis module will be compiled:        $enable_omhiredis"
 echo "    omazureeventhubs module will be compiled: $enable_omazureeventhubs"
 echo "    omdtls module will be compiled:           $enable_omdtls"
+echo "    omsentinel module will be compiled:       $enable_omsentinel"
 echo
 echo "---{ parser modules }---"
 echo "    pmlastmsg module will be compiled:        $enable_pmlastmsg"
