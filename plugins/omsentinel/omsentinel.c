@@ -1071,11 +1071,14 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	long http_code = 0;
 	DEFiRet;
 
+	LogMsg(0, NO_ERRCODE, LOG_INFO, "[omsentinel] Getting authentication token...");
+
 	curl = curl_easy_init();
 	if (curl)
 	{
 		headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
 		curl_easy_setopt(curl, CURLOPT_URL, pData->apiRestAuth);
+		DBGPRINTF("[omsentinel]: authentication URL is %s\n", pData->apiRestAuth);
 		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, message);
 		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
@@ -1083,9 +1086,11 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 		if (pData->proxyHost != NULL)
 		{
 			curl_easy_setopt(curl, CURLOPT_PROXY, pData->proxyHost);
+			DBGPRINTF("[omsentinel]: proxy set %s\n", pData->proxyHost);
 		}
 		if (pData->proxyPort != 0)
 		{
+			DBGPRINTF("[omsentinel]: proxyport set %s\n", pData->proxyHost);
 			curl_easy_setopt(curl, CURLOPT_PROXYPORT, pData->proxyPort);
 		}
 		if (pData->authBuf != NULL)
@@ -1139,6 +1144,7 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 					pData->authExp = time(NULL) + expireDate;
 				}
 			}
+			LogMsg(0, NO_ERRCODE, LOG_INFO, "[omsentinel] New access token acquired!");
 			json_object_put(parsed_json);
 		}
 	}
