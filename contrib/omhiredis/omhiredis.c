@@ -99,12 +99,14 @@ typedef struct _instanceData {
 				- $.redis!index
 				Those 2 infos can either be provided through usage of imhiredis
 				or set manually with Rainerscript */
+#ifdef HIREDIS_SSL
 	sbool use_tls; /* Should we use TLS to connect to redis ? */
 	char *ca_cert_bundle; /* CA bundle file */
 	char *ca_cert_dir; /* Path of trusted certificates */
 	char *client_cert; /* Client certificate */
 	char *client_key; /* Client private key */
 	char *sni; /* TLS Server Name Indication */
+#endif
 
 } instanceData;
 
