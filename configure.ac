@@ -2638,6 +2638,16 @@ AC_ARG_ENABLE(redis_tests,
 )
 AM_CONDITIONAL(ENABLE_REDIS_TESTS, test x$enable_redis_tests = xyes)
 
+AC_ARG_ENABLE(redis_ssl,
+        [AS_HELP_STRING([--enable-redis-ssl],[Enable redis ssl support @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_redis_ssl="yes" ;;
+          no) enable_redis_ssl="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-redis-ssl) ;;
+         esac],
+        [enable_redis_ssl=no]
+)
+
 if test "x$enable_omhiredis" = "xyes" -o "x$enable_imhiredis" = "xyes" ; then
     PKG_CHECK_MODULES(HIREDIS, hiredis >= 0.10.1, [],
         [AC_SEARCH_LIBS(redisConnectWithTimeout, hiredis,
@@ -2662,35 +2672,38 @@ if test "x$enable_omhiredis" = "xyes" -o "x$enable_imhiredis" = "xyes" ; then
             [AC_MSG_ERROR([hiredis not found])]
         )]
     )
-    PKG_CHECK_MODULES(HIREDIS_SSL, hiredis_ssl >= 0.10.1, 
-	# hiredis_ssl found
-	[
-        AC_DEFINE(HIREDIS_SSL, 1, [TLS support enabled in hiredis])
-	],
-        [AC_SEARCH_LIBS(redisCreateSSLContext, hiredis_ssl,
-            [AC_COMPILE_IFELSE(
-                [AC_LANG_PROGRAM(
-                    [[ #include <hiredis/hiredis.h> 
-		       #include <hiredis/hiredis_ssl.h>
-		     ]],
-                    [[ #define major 0
-                       #define minor 10
-                       #define patch 1
-                       #if (( HIREDIS_MAJOR > major ) || \
-                         (( HIREDIS_MAJOR == major ) && ( HIREDIS_MINOR > minor )) || \
-                         (( HIREDIS_MAJOR == major ) && ( HIREDIS_MINOR == minor ) && ( HIREDIS_PATCH >= patch ))) \
-                       /* OK */
-                       #else
-                       # error Hiredis_ssl version must be >= major.minor.path
-                       #endif
-                    ]]
-                )],
-                [],
-                [AC_MSG_ERROR([hiredis_ssl version must be >= 0.10.1])]
-            )],
-            [AC_MSG_WARN([hiredis_ssl not found, no TLS support in hiredis])]
-        )]
-    )
+        if test "x$enable_redis_ssl" = "xyes"; then
+                PKG_CHECK_MODULES(HIREDIS_SSL, hiredis_ssl >= 0.10.1, 
+                        # hiredis_ssl found
+                        [
+                        AC_DEFINE(HIREDIS_SSL, 1, [TLS support enabled in hiredis])
+                        ],
+                        [AC_SEARCH_LIBS(redisCreateSSLContext, hiredis_ssl,
+                        [AC_COMPILE_IFELSE(
+                                [AC_LANG_PROGRAM(
+                                [[ #include <hiredis/hiredis.h> 
+                                #include <hiredis/hiredis_ssl.h>
+                                ]],
+                                [[ #define major 0
+                                #define minor 10
+                                #define patch 1
+                                #if (( HIREDIS_MAJOR > major ) || \
+                                        (( HIREDIS_MAJOR == major ) && ( HIREDIS_MINOR > minor )) || \
+                                        (( HIREDIS_MAJOR == major ) && ( HIREDIS_MINOR == minor ) && ( HIREDIS_PATCH >= patch ))) \
+                                /* OK */
+                                #else
+                                # error Hiredis_ssl version must be >= major.minor.path
+                                #endif
+                                ]]
+                                )],
+                                [],
+                                [AC_MSG_ERROR([hiredis_ssl version must be >= 0.10.1])]
+                        )],
+                        [AC_MSG_WARN([hiredis_ssl not found, no TLS support in hiredis])]
+                        )]
+                )
+        fi
+        
 fi
 
 if test "x$enable_imhiredis" = "xyes" ; then
@@ -3012,6 +3025,7 @@ echo "    kafka static linking enabled:             $enable_kafka_static"
 echo "    qpid proton static linking enabled:       $enable_qpidproton_static"
 echo "    atomic operations enabled:                $enable_atomic_operations"
 echo "    libcap-ng support enabled:                $enable_libcapng"
+echo "    redis ssl support enabled:                $enable_redis_ssl"
 
 echo
 echo "---{ input plugins }---"
