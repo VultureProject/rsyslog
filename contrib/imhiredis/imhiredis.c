@@ -579,6 +579,12 @@ CODESTARTnewInpInst
 	if (inst->password == NULL) {
 		LogMsg(0, RS_RET_OK, LOG_INFO, "imhiredis: no password specified");
 	}
+#ifdef HIREDIS_SSL
+	if((inst->client_cert == NULL) ^ (inst->client_key == NULL)){
+		LogMsg(0, RS_RET_PARAM_ERROR, LOG_ERR, "imhiredis: \"client_cert\" and \"client_key\" must be specified together!");
+		ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+	}
+#endif
 
 	DBGPRINTF("imhiredis: newInpInst key=%s, mode=%s, uselpop=%d\n",
 		inst->key, inst->modeDescription, inst->useLPop);
