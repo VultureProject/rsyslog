@@ -247,7 +247,6 @@ static rsRetVal initHiredis(wrkrInstanceData_t *pWrkrData, int bSilent)
 
 #ifdef HIREDIS_SSL
 	if (pWrkrData->pData->use_tls) {
-		redisInitOpenSSL();
 		pWrkrData->ssl_conn = redisCreateSSLContext(pWrkrData->pData->ca_cert_bundle, pWrkrData->pData->ca_cert_dir, pWrkrData->pData->client_cert, pWrkrData->pData->client_key, pWrkrData->pData->sni, &pWrkrData->ssl_error);
 		if (!pWrkrData->ssl_conn || pWrkrData->ssl_error != REDIS_SSL_CTX_NONE) {
 			LogError(0, NO_ERRCODE, "omhiredis: SSL Context error: %s", redisSSLContextGetError(pWrkrData->ssl_error));
@@ -850,4 +849,10 @@ CODEmodInit_QueryRegCFSLineHdlr
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 	DBGPRINTF("omhiredis: module compiled with rsyslog version %s.\n", VERSION);
+
+#ifdef HIREDIS_SSL
+	// initialize OpenSSL
+	redisInitOpenSSL();
+#endif
+
 ENDmodInit
