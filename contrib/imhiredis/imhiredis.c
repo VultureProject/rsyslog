@@ -869,6 +869,11 @@ CODEmodInit_QueryRegCFSLineHdlr
 	/* activate libevent for (p)threads support */
 	evthread_use_pthreads();
 
+#ifdef HIREDIS_SSL
+	// initialize OpenSSL
+	redisInitOpenSSL();
+#endif
+
 ENDmodInit
 
 
@@ -921,7 +926,6 @@ static void redisAsyncConnectCallback (const redisAsyncContext *c, int status) {
 
 #ifdef HIREDIS_SSL
 	if (inst->use_tls) {
-		redisInitOpenSSL();
 		inst->ssl_conn = redisCreateSSLContext(inst->ca_cert_bundle, inst->ca_cert_dir, inst->client_cert, inst->client_key, inst->sni, &inst->ssl_error);
 		
 		if (!inst->ssl_conn || inst->ssl_error != REDIS_SSL_CTX_NONE) {
@@ -1502,7 +1506,6 @@ rsRetVal redisConnectSync(redisContext **conn, redisNode *node, instanceConf_t *
 	}
 #ifdef HIREDIS_SSL
 	if (inst->use_tls) {
-		redisInitOpenSSL();
 		inst->ssl_conn = redisCreateSSLContext(inst->ca_cert_bundle, inst->ca_cert_dir, inst->client_cert, inst->client_key, inst->sni, &inst->ssl_error);
 		
 		if (!inst->ssl_conn || inst->ssl_error != REDIS_SSL_CTX_NONE) {
