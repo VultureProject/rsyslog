@@ -645,6 +645,13 @@ CODESTARTnewActInst
 	}
 
 	dbgprintf("omhiredis: checking config sanity\n");
+	
+#ifdef HIREDIS_SSL
+	if((pData->client_cert == NULL) ^ (pData->client_key == NULL)){
+		LogMsg(0, RS_RET_PARAM_ERROR, LOG_ERR, "omhiredis: \"client_cert\" and \"client_key\" must be specified together!");
+		ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+	} 
+#endif
 
 	if (!pData->modeDescription) {
 		dbgprintf("omhiredis: no mode specified, setting it to 'template'\n");
