@@ -2700,7 +2700,7 @@ if test "x$enable_omhiredis" = "xyes" -o "x$enable_imhiredis" = "xyes" ; then
                                 [],
                                 [AC_MSG_ERROR([hiredis_ssl version must be >= 1.0.0])]
                         )],
-                        [AC_MSG_WARN([hiredis_ssl not found, no TLS support in hiredis])]
+                        [AC_MSG_ERROR([hiredis_ssl not found, no TLS support in hiredis])]
                         )]
                 )
         fi
