@@ -22,6 +22,7 @@ local4.* {
         set $.redis!group = "myGroup";
         set $.redis!index = "2-0";
         action(type="omhiredis"
+                name="omhiredis-stream-ack"
                 server="127.0.0.1"
                 serverport="'$REDIS_RANDOM_PORT'"
                 mode="stream"
@@ -98,6 +99,9 @@ lag
 0"
 
 cmp_exact $RSYSLOG_OUT_LOG
+
+content_check "omhiredis[omhiredis-stream-ack]: no stream.outField set, using 'msg' as default" ${RSYSLOG_DYNNAME}.started
+content_check "omhiredis[omhiredis-stream-ack]: trying connect to '127.0.0.1'" ${RSYSLOG_DYNNAME}.started
 
 stop_redis
 
