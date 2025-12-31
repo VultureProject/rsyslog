@@ -11,7 +11,7 @@ export TESTMESSAGES2=50001
 export TESTMESSAGESFULL=100000
 
 # Generate random topic name
-export RANDTOPIC=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
+export RANDTOPIC="$(printf '%08x' "$(( (RANDOM<<16) ^ RANDOM ))")"
 
 # Set EXTRA_EXITCHECK to dump kafka/zookeeperlogfiles on failure only.
 export EXTRA_EXITCHECK=dumpkafkalogs
@@ -25,6 +25,7 @@ stop_kafka
 echo Create kafka/zookeeper instance and topics
 start_zookeeper
 start_kafka
+wait_for_kafka_startup
 create_kafka_topic $RANDTOPIC '.dep_wrk' '22181'
 
 echo Stopping kafka cluster instance
@@ -105,15 +106,14 @@ injectmsg2 1 $TESTMESSAGES
 
 echo Starting kafka cluster instance
 start_kafka
-
-echo Sleep to give rsyslog instances time to process data ...
-sleep 5
+echo Ensuring kafka cluster is ready before resuming processing ...
+wait_for_kafka_startup
 
 echo Inject messages into rsyslog sender instance
 tcpflood -m$TESTMESSAGES -i$TESTMESSAGES2
 
-echo Sleep to give rsyslog sender time to send data ...
-sleep 5
+echo Verifying kafka cluster remains reachable after message burst ...
+wait_for_kafka_startup
 
 echo Stopping sender instance [imkafka]
 shutdown_when_empty 2

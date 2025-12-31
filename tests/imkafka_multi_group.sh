@@ -2,7 +2,9 @@
 # added 2018-08-29 by alorbach
 # This file is part of the rsyslog project, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
-check_command_available kafkacat
+check_command_available kcat
+echo TEST unclear in regard to load balancing - currently skipping it.
+exit 77
 export KEEP_KAFKA_RUNNING="YES"
 # False positive codefactor.io
 export RSYSLOG_OUT_LOG_1="${RSYSLOG_OUT_LOG:-default}.1"
@@ -19,7 +21,7 @@ stop_kafka
 start_zookeeper
 start_kafka
 
-export RANDTOPIC=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
+export RANDTOPIC="$(printf '%08x' "$(( (RANDOM<<16) ^ RANDOM ))")"
 
 create_kafka_topic $RANDTOPIC '.dep_wrk' '22181'
 
@@ -31,9 +33,9 @@ main_queue(queue.timeoutactioncompletion="60000" queue.timeoutshutdown="60000")
 
 module(load="../plugins/imkafka/.libs/imkafka")
 /* Polls messages from kafka server!*/
-input(	type="imkafka" 
-	topic="'$RANDTOPIC'" 
-	broker="localhost:29092"
+input(	type="imkafka"
+	topic="'$RANDTOPIC'"
+	broker="127.0.0.1:29092"
 	consumergroup="rsysloggroup"
 	confParam=[ "compression.codec=none",
 		"session.timeout.ms=10000",
@@ -61,8 +63,8 @@ main_queue(queue.timeoutactioncompletion="60000" queue.timeoutshutdown="60000")
 
 module(load="../plugins/imkafka/.libs/imkafka")
 /* Polls messages from kafka server!*/
-input(	type="imkafka" 
-	topic="'$RANDTOPIC'" 
+input(	type="imkafka"
+	topic="'$RANDTOPIC'"
 	broker="localhost:29092"
 	consumergroup="rsysloggroup"
 	confParam=[ "compression.codec=none",
@@ -86,7 +88,7 @@ startup 2
 
 TIMESTART=$(date +%s.%N)
 
-injectmsg_kafkacat
+injectmsg_kcat
 # special case: number of test messages differs from file output
 wait_file_lines $RSYSLOG_OUT_LOG $((TESTMESSAGES)) ${RETRIES:-200}
 # Check that at least 25% messages are in both logfiles, otherwise load balancing hasn't worked

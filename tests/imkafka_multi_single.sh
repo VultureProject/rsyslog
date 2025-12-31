@@ -2,7 +2,7 @@
 # added 2018-08-29 by alorbach
 # This file is part of the rsyslog project, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
-check_command_available kafkacat
+check_command_available kcat
 export KEEP_KAFKA_RUNNING="YES"
 
 export TESTMESSAGES=100000
@@ -16,7 +16,7 @@ stop_kafka
 start_zookeeper
 start_kafka
 
-export RANDTOPIC=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
+export RANDTOPIC="$(printf '%08x' "$(( (RANDOM<<16) ^ RANDOM ))")"
 
 create_kafka_topic $RANDTOPIC '.dep_wrk' '22181'
 
@@ -134,7 +134,7 @@ startup
 
 TIMESTART=$(date +%s.%N)
 
-injectmsg_kafkacat
+injectmsg_kcat
 # special case: number of test messages differs from file output
 wait_file_lines $RSYSLOG_OUT_LOG $((TESTMESSAGES * 8)) ${RETRIES:-200}
 shutdown_when_empty

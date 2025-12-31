@@ -165,7 +165,7 @@ endif
 # basic network support, needed for rsyslog startup (e.g. our own system name)
 #
 pkglib_LTLIBRARIES += lmnet.la
-lmnet_la_SOURCES = net.c net.h
+lmnet_la_SOURCES = net.c net.h netns_socket.c netns_socket.h
 lmnet_la_CPPFLAGS = $(PTHREADS_CFLAGS) $(RSRT_CFLAGS)
 lmnet_la_LDFLAGS = -module -avoid-version ../compat/compat_la-getifaddrs.lo
 lmnet_la_LIBADD =
@@ -179,9 +179,7 @@ endif
 
 # network stream master class and stream factory
 lmnetstrms_la_SOURCES = netstrms.c netstrms.h \
-			netstrm.c netstrm.h \
-			nssel.c nssel.h \
-			nspoll.c nspoll.h
+			netstrm.c netstrm.h
 lmnetstrms_la_CPPFLAGS = $(PTHREADS_CFLAGS) $(RSRT_CFLAGS)
 lmnetstrms_la_LDFLAGS = -module -avoid-version
 lmnetstrms_la_LIBADD =
@@ -195,9 +193,7 @@ endif
 
 # plain tcp driver - main driver
 pkglib_LTLIBRARIES += lmnsd_ptcp.la
-lmnsd_ptcp_la_SOURCES = nsd_ptcp.c nsd_ptcp.h \
-		  	nsdsel_ptcp.c nsdsel_ptcp.h \
-			nsdpoll_ptcp.c nsdpoll_ptcp.h
+lmnsd_ptcp_la_SOURCES = nsd_ptcp.c nsd_ptcp.h
 lmnsd_ptcp_la_CPPFLAGS = $(PTHREADS_CFLAGS) $(RSRT_CFLAGS)
 lmnsd_ptcp_la_LDFLAGS = -module -avoid-version
 lmnsd_ptcp_la_LIBADD =
@@ -215,7 +211,7 @@ endif # if ENABLE_INET
 if ENABLE_OPENSSL
 # noinst_LTLIBRARIES += lmnsd_ossl.la
 pkglib_LTLIBRARIES += lmnsd_ossl.la
-lmnsd_ossl_la_SOURCES = net_ossl.c net_ossl.h nsd_ossl.c nsd_ossl.h nsdsel_ossl.c  nsdsel_ossl.h
+lmnsd_ossl_la_SOURCES = net_ossl.c net_ossl.h nsd_ossl.c nsd_ossl.h
 lmnsd_ossl_la_CPPFLAGS = $(PTHREADS_CFLAGS) $(RSRT_CFLAGS) $(OPENSSL_CFLAGS)
 lmnsd_ossl_la_LDFLAGS = -module -avoid-version
 lmnsd_ossl_la_LIBADD = $(OPENSSL_LIBS)
@@ -227,10 +223,21 @@ endif
 #
 if ENABLE_GNUTLS
 pkglib_LTLIBRARIES += lmnsd_gtls.la
-lmnsd_gtls_la_SOURCES = nsd_gtls.c nsd_gtls.h nsdsel_gtls.c  nsdsel_gtls.h
+lmnsd_gtls_la_SOURCES = nsd_gtls.c nsd_gtls.h
 lmnsd_gtls_la_CPPFLAGS = $(PTHREADS_CFLAGS) $(RSRT_CFLAGS) $(GNUTLS_CFLAGS)
 lmnsd_gtls_la_LDFLAGS = -module -avoid-version
 lmnsd_gtls_la_LIBADD = $(GNUTLS_LIBS)
+endif
+
+#
+# Mbed TLS netstream driver
+#
+if ENABLE_MBEDTLS
+pkglib_LTLIBRARIES += lmnsd_mbedtls.la
+lmnsd_mbedtls_la_SOURCES = nsd_mbedtls.c nsd_mbedtls.h
+lmnsd_mbedtls_la_CPPFLAGS = $(PTHREADS_CFLAGS) $(RSRT_CFLAGS) $(MBEDTLS_CFLAGS)
+lmnsd_mbedtls_la_LDFLAGS = -module -avoid-version
+lmnsd_mbedtls_la_LIBADD = $(MBEDTLS_LIBS)
 endif
 
 #
@@ -238,7 +245,7 @@ endif
 #
 if ENABLE_LIBGCRYPT
    noinst_LTLIBRARIES += libgcry.la
-   libgcry_la_SOURCES = libgcry.c libgcry_common.c libgcry.h
+   libgcry_la_SOURCES = libgcry.c libcry_common.c libcry_common.h libgcry.h
    libgcry_la_CPPFLAGS =  $(RSRT_CFLAGS) $(LIBGCRYPT_CFLAGS)
    pkglib_LTLIBRARIES += lmcry_gcry.la
    lmcry_gcry_la_DEPENDENCIES = libgcry.la
@@ -246,6 +253,23 @@ if ENABLE_LIBGCRYPT
    lmcry_gcry_la_CPPFLAGS = $(RSRT_CFLAGS) $(LIBGCRYPT_CFLAGS)
    lmcry_gcry_la_LDFLAGS = -module -avoid-version
    lmcry_gcry_la_LIBADD = libgcry.la $(LIBGCRYPT_LIBS)
+endif
+
+#
+# support library for openssl crypto provider
+#
+if ENABLE_OPENSSL_CRYPTO_PROVIDER
+   # Helper
+   noinst_LTLIBRARIES += libossl.la
+   libossl_la_SOURCES = libossl.c libossl.h libcry_common.c libcry_common.h
+   libossl_la_CPPFLAGS = $(PTHREADS_CFLAGS) $(RSRT_CFLAGS) $(OPENSSL_CFLAGS)
+
+   pkglib_LTLIBRARIES += lmcry_ossl.la
+   lmcry_ossl_la_DEPENDENCIES = libossl.la
+   lmcry_ossl_la_SOURCES = lmcry_ossl.c lmcry_ossl.h
+   lmcry_ossl_la_CPPFLAGS = $(RSRT_CFLAGS) $(OPENSSL_FLAGS)
+   lmcry_ossl_la_LDFLAGS = -module -avoid-version
+   lmcry_ossl_la_LIBADD = libossl.la $(OPENSSL_LIBS)
 endif
 
 #

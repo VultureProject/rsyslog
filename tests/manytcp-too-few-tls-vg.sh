@@ -1,6 +1,7 @@
 #!/bin/bash
 # test many concurrent tcp connections
 # released under ASL 2.0
+export USE_VALGRIND="YES"
 . ${srcdir:=.}/diag.sh init
 skip_platform "FreeBSD"  "This test does not work on FreeBSD"
 export NUMMESSAGES=40000 # we unfortunately need many messages as we have many connections
@@ -19,7 +20,7 @@ global(
 
 module(load="../plugins/imtcp/.libs/imtcp" maxSessions="1100"
        streamDriver.mode="1" streamDriver.authMode="anon")
-input(type="imtcp" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
+input(type="imtcp" socketBacklog="1000" port="0" listenPortFileName="'$RSYSLOG_DYNNAME'.tcpflood_port")
 
 $template outfmt,"%msg:F,58:2%\n"
 template(name="dynfile" type="string" string=`echo $RSYSLOG_OUT_LOG`) # trick to use relative path names!

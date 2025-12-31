@@ -2,7 +2,7 @@
 # added 2018-08-29 by alorbach
 # This file is part of the rsyslog project, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
-check_command_available kafkacat
+check_command_available kcat
 export KEEP_KAFKA_RUNNING="YES"
 
 export TESTMESSAGES=1000
@@ -10,7 +10,7 @@ export TESTMESSAGES=1000
 export EXTRA_EXITCHECK=dumpkafkalogs
 export EXTRA_EXIT=kafka
 
-export RANDTOPIC=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
+export RANDTOPIC="$(printf '%08x' "$(( (RANDOM<<16) ^ RANDOM ))")"
 
 download_kafka
 stop_zookeeper
@@ -46,7 +46,7 @@ startup
 
 # We inject messages, even though we know this will not work. The reason
 # is that we want to ensure we do not get a segfault in such an error case
-injectmsg_kafkacat
+injectmsg_kcat
 
 shutdown_when_empty
 wait_shutdown

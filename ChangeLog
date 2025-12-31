@@ -1,4 +1,1498 @@
 ----------------------------------------------------------------------------------------
+Scheduled Release 8.2512.0 (aka 2025.10) 2025-12-09
+- overall improved documentation via a large set of topic updates.
+- 2025-12-05: omhiredis: add TLS support
+  * Add support for TLS in omhiredis
+  * fix(omhiredis): Make redis SSL support user-configurable
+  * fix(omhiredis): Adding SSL variables into conditinal compilation
+  * fix(omhiredis): Ensure both client_cert and client_key are specified together
+  * fix(omhiredis): fix SSL initialization for thread safety
+  * fix(configure.ac): Need hiredis_ssl>=1.0.0
+  Thanks to Jérémie Jourdin, Amine EL AKKANI, frikilax for the patch.
+- 2025-12-04: packaging/docker: add TLS support to collector image
+  Add OpenSSL-based TLS support to the rsyslog collector Docker
+  image, enabling secure log collection over encrypted connections
+  while maintaining full backward compatibility.
+- 2025-12-04: mmsnareparse: make regex trailing search limit configurable
+  Add ignoreTrailingPattern.searchWindow parameter to control the maximum number
+  of characters searched at the end of messages.
+- 2025-12-04: nsd_gtls: fix repeated warnings on connection retry
+  Move loggedWarnings to static storage to ensure missing cert/key/CA warnings are
+  emitted only once per process, preventing log spam on broken connections.
+  Thanks to Attila Lakatos for the patch.
+- 2025-12-02: omuxsock: add NetworkNamespace functionality
+  This builds on "PR#6121 net: Add NetworkNamespace APIS"
+  to add Network Namespace support for omuxsock.  In
+  addition, new functionality is added to support
+  abstract socket names, as well as connected sockets.
+  Changes are isolated to omuxsock to provide the new
+  functionality:
+  a. Abstract unix socket names (including network namespaces)
+  b. Connected socket support (SOCK_STREAM, SOCK_SEQPACKET)
+  c. Support for load, and action configuration
+  d. Bug fix related to closing/reopening sockets
+     This bug would cause the socket to be closed and
+     reopened for every message sent.
+  New tests are added as follows:
+  a. uxsock_multiple.sh tests basic functionality with
+     multiple output instances.
+  b. uxsock_multiple_netns.sh is similar but using
+     multiple namespaces.
+  c. uxsock_simple_abstract.sh mirrors the existing
+     uxsock_simple.sh but tests with abstract socket
+     names.
+  The uxsockrcvr test program was modified to support
+  these new tests.
+  Thanks to Billie Alsup for the patch.
+- 2025-11-28: imtcp: add support for NetworkNamespace
+  This builds on
+    https://github.com/rsyslog/rsyslog/pull/6121
+  to add Network Namespace support to imtcp module. This
+  extends imtcp to support a wider range of Unix/Linux
+  environments (or any environment supporting network
+  namespaces).
+  The imtcp module is enhanced to accept a NetworkNamespace
+  parameter, both as a default at the module level, and
+  on a per-instance basis.
+  The tcpsrv module is enhanced to allow the NetworkNamespace
+  to be applied to a listener's configuration parameters.
+  Finally, the netstrm module is enhanced to switch namespaces
+  before invoking the downstream (driver specific) LstnInit
+  function.
+  A new test imtcp-netns (and associated imtcp-netns-vg) is
+  added to test this functionality.  This must be run as root
+  (technically it must be run by a user with CAP_SYS_ADMIN
+  capabilities, as network namespace creating/change is
+  required).
+  A slight change to diag.sh is made to allow passing $RS_REDIR
+  to valgrind (as $RS_REDIR is used in the imtcp-netns.sh
+  test for some negative cases).
+  Thanks to Billie Alsup for the patch.
+- 2025-11-25: mmanon: fixed data race issue in pseudonymization handling
+  Thanks to Jan Gerhards for the patch.
+- 2025-11-24: mmsnareparse: add regex support for trailing data removal
+  Add ignoreTrailingPattern.regex parameter to support POSIX extended regular
+  expressions for dynamic trailing data removal.
+- 2025-11-21: mmsnareparse: add ignoreTrailingPattern parameter
+  Add configurable mechanism to detect and remove trailing extra-data sections
+  from messages before parsing.
+- 2025-11-17: mmsnareparse: add Sysmon event support
+  Add support for Microsoft Sysinternals Sysmon events via an external JSON
+  definition file.
+- 2025-11-12: omhttp: added explicit splunk HEC profile
+  permits easier configuration with good defaults.
+  Thanks to github user shinigami35 for the patch.
+- 2025-11-07: imkafka: Implement Kafka Metrics and new pstats format
+  * Adapted omkafka pstats counters to the consumer imkafka modules.
+  * Implemented both global (module-level) and local (topic+cg-level) metrics.
+  * Added support for librdkafka metrics and JSON emissions.
+  * Updated impstats to include new format="zabbix" compatible with Zabbix LLD.
+  Thanks to MRedbourne for the patch.
+- 2025-11-03: content_count_check: use optional file argument if provided
+  Thanks to Attila Lakatos for the patch.
+- 2025-10-30: omhttp: Implement optional per destination server stats
+  Thanks to github user shinigami35 for the patch.
+- 2025-10-30: omhiredis: support UDS redis server address
+  Thanks to github user Appla for the patch.
+- 2025-10-29: omelasticsearch: add apikey authentication
+  Add support for APIKEY authentication, which is recommended by Elasticsearch.
+- 2025-10-28: net: Add IP address SAN support
+  Thanks to Sebastien Deronne for the patch.
+- 2025-10-15: ossl bugfix: ensure peer cert is freed in osslChkPeerAuth
+  Ensure osslChkPeerAuth starts with a null peer-certificate pointer and
+  frees any retrieved X509 certificate so OpenSSL allocations from
+  SSL_get_peer_certificate do not leak after TLS handshakes.
+  Thanks to Attila Lakatos for the patch.
+- 2025-10-13: Add MbedTLS netstream driver.
+  Thanks to Stephane Adenot for the patch and the great cooperation on this PR.
+- 2025-10-07: imptcp: fix null pointer dereference in error logging
+  Prevents potential crashes when logging connection failures where peer
+  name or IP information is unavailable.
+  The compiler detected a potential null pointer dereference in the
+  addSess() error cleanup path. When NULL_CHECK() macros fail and jump to
+  finalize_it, the peerName and peerIP parameters could be NULL but were
+  passed directly to propGetSzStr() in LogError().
+  Original error: ../../runtime/prop.h:66:18: error: potential null
+  pointer dereference [-Werror=null-dereference] 66 |     return
+  (pThis->len < CONF_PROP_BUFSIZE) ? pThis->szVal.sz : pThis->szVal.psz; |
+  Thanks to Attila Lakatos for the patch.
+- 2025-10-06: CI: fix imtcp-tls-gibberish being executed in non-TLS builds
+  This tool requires rsyslog to build with TLS support. If not present,
+  the test will always fail. This is solved by executing it only if gnutls
+  is enabled. As this is a fequently tested environment, this does not
+  reduce test coverage. It is easier to do then checking for both gnutls
+  and openssl.
+  Many thanks to Michael Biebl for bringing this to our attention.
+  closes https://github.com/rsyslog/rsyslog/issues/6224
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2510.0 (aka 2025.10) 2025-10-14
+- overall improved documentation via a large set of topic updates.
+- overall improvments in build systems and CI testing
+- overall refectoring to make code better understandable (e.g.
+  more doxygen Comments)
+- 2025-10-05: mmjsonparse: add find-json mode for embedded JSON
+  Plain JSON embedded in text is common in production logs. This change
+  lets users parse such logs without cookies, improving ease of use and
+  lowering onboarding friction while keeping legacy behavior intact.
+  Before/After: cookie-only JSON -> find-json parses first top-level {}.
+  Impact: Default behavior unchanged. New mode and counters are opt-in.
+- 2025-10-03: mmjsontransform: add experimental JSON dotted-key (un)flatten
+  Real-world need: unflatten dotted JSON into nested objects, and optionally
+  flatten back for downstream tools. This introduces a general transformer
+  with a dedicated output tree. Interface is intentionally unstable.
+  Impact: New module behind --enable-mmjsontransform; no default behavior
+  changes. New tests and docs added. Parameters and behavior may change.
+  Add mmjsontransform, a message modification module that rewrites dotted
+  JSON keys. By default it "unflattens" an input object to nested containers
+  and stores the result in a configured output property. A mode parameter
+  also supports "flatten" to collapse nested trees into dotted keys. The
+  action refuses to overwrite an existing destination, validates that input
+  is a JSON object, and reports conflicts with precise key paths. Per-action
+  config is immutable; workers hold pointers only, so no extra locking. Docs
+  (Sphinx + parameter refs) and doxygen coverage included, plus a regression
+  test exercising nested arrays/objects. Build system and CI scripts gain
+  --enable-mmjsontransform and a basic test hook. An experimental companion
+  mmjsonrewrite module is wired similarly for dotted-key expansion.
+  Before/After: Previously no built-in JSON un/flatten; now an action can
+  unflatten (default) or flatten JSON into a separate message property.
+- 2025-10-01: mmsnareparse: comprehensive Windows Security Event Log parser
+  Implement complete NXLog Snare-formatted Windows Security event parser
+  with multi-format support (RFC5424/RFC3164), 100+ field patterns, and
+  advanced features including GUID/IP/timestamp type detection, runtime
+  configuration, enhanced validation modes, and comprehensive test suite.
+  Features:
+  - Parse major Windows security event types (4624, 4625, 4634, etc.)
+  - Extract structured data into configurable JSON containers (!win default)
+  - Handle modern Windows telemetry (LAPS, TLS, WDAC, WUFB, Kerberos)
+  - Type-aware parsing with validation and fallback handling
+  - Runtime configuration support for custom field patterns
+  - Thread-safe design with no shared mutable state
+  - 9 comprehensive test scripts covering all functionality
+  Impact: Enables structured analysis of Windows Security events for
+  SIEM integration, threat detection, and compliance reporting while
+  preserving original payloads for forensic investigation.
+- 2025-10-01: omkafka: restore producev fallback for older librdkafka
+  Reason: keep omkafka building across librdkafka versions, including
+  newer distro toolchains and legacy environments, to reduce friction
+  for users and CI/container images.
+  Before: builds failed or used unsupported code paths with some
+  librdkafka versions; header config could silently miscompile.
+  After: feature-detect produceva/headers, fall back to legacy produce,
+  and reject header config when not supported.
+  Impact: possible configuration-time error if kafka headers are set
+  but the installed librdkafka lacks header support.
+  This change introduces compile-time feature detection. When
+  produceva is available, we use the vector API; otherwise we fall back
+  to the classic produce path and adjust error handling accordingly.
+  Header support is compiled only when the library provides it; the
+  instance struct and cleanup are guarded to match. A missing
+  RD_KAFKA_VERSION is defined to avoid preprocessor failures. No queue
+  or OMODTX semantics are changed; HUP and stats remain unaffected. No
+  public API/ABI is exposed from omkafka, so impact is limited to build
+  and configuration behavior.
+- 2025-09-29: omelasticserach: detect server version and adjust config
+  On startup, omelasticsearch now detects server version and platform
+  (ES/openSearch) and adjust config parameters accordingly. This is
+  also a change that we can use as a base for further auto-tuning.
+- 2025-09-29: add source port to imtcp user-targeting messages
+  All error, warning etc messages that specify the remote peer via
+  hostname or IP now also give the source port to provide a unified
+  logging experience.
+- 2025-09-28: ci: add openEuler 24.03 LTS container and CI job
+  Add an openEuler 24.03 LTS development container and wire it into CI to
+  validate builds on that platform.
+  Why: expand RPM-based coverage and catch distro-specific build issues
+  early.
+  Impact: CI-only. No runtime or API changes.
+  Before: no openEuler container or CI job; build breakage went unnoticed.
+  After: dedicated container and matrix entry compile and run unit tests
+  on openEuler.
+  Notes: module and test coverage may differ on openEuler; track gaps in
+  follow-up issues.
+- 2025-09-25: omelasticsearch: omit _type by default; use typeless endpoint
+  Newer Elasticsearch versions reject typed APIs. This adapts the module
+  so shipping works out of the box with modern clusters and keeps the
+  codebase aligned with typeless ES conventions.
+  Impact: bulk metadata no longer includes _type unless explicitly set.
+  Old setups that relied on a default "events" type (ES < 8) may need
+  explicit configuration.
+  Technically, the default searchType is now NULL
+  (OMES_SEARCHTYPE_DEFAULT). setPostURL continues to route requests to
+  the typeless /_doc endpoint, but bulk metadata is generated without a
+  _type field when searchType is unset. The legacy default "events" for
+  ES < 8 is removed. Tests are updated to stop passing searchType, and
+  the searchType-empty test is dropped to reflect the new default. No
+  OMODTX or action-queue semantics change.
+  Closes: https://github.com/rsyslog/rsyslog/issues/5060
+- 2025-09-25: template: add jsonftree option for nested jsonf output
+  We want easy nested JSON to match common schemas (e.g., Elastic ECS)
+  without external processors. This introduces an opt-in mode so existing
+  jsonf users keep exact behavior while enabling structured output when
+  requested.
+  Impact: No change unless option.jsonftree is enabled. With jsonftree,
+  dotted outnames render as nested objects; empty containers are skipped.
+  On name collisions (object vs value), we fall back to flat rendering.
+  Before: jsonf always emitted flat name/value pairs, even for dotted
+  outnames. After: jsonf remains flat by default; enabling jsonftree makes
+  "host.hostname" and "host.ip" render as {"host":{"hostname":...,"ip":...}}.
+  Technically, we add option.jsonftree to templates. When set, we lazily
+  build a per-template JSON tree (tplJsonNode) from dotted segments and
+  render it in one pass, reusing existing jsonf formatting for leaves.
+  The tree state is tracked on the template and freed on template delete.
+  Config parsing enforces mutual exclusivity among sql, stdsql, json,
+  jsonf, and jsonftree. Constants record bJSONf to reuse serialized
+  fragments. Tests cover nested output and pure-json cases using
+  option.jsonftree.
+- 2025-09-23: musrmsg bugfix: potential null pointer dereference causes segfault
+  If there is no user in the data base with user ID uid, getpwuid() returns a null
+  pointer value. Therefore, it is necessary to check the return value of the function
+  to prevent segfault caused by dereference of null pointer.
+  In addition:
+  [1] Free the memory allocated for the current session identifier sessions_list[j]
+  to prevent a memory leak.
+  [2] Use LogError instead of dbgprintf to display error reports to the user.
+  Many thanks to Qiumiao Zhang for the patch.
+- 2025-09-22: mmleefparse: new message modification module for LEEF format
+  This parses the LEEF message (if it is) and creates a JSON subtree.
+  The current implementation is PoC and will be provided to gather
+  early review.
+  Changes, including breaking changes, may happen in future versions of
+  this module.
+- 2025-09-21: tests/omelasticsearch: align suite with ES 7.14, reduce flakiness
+  Non-technical: test flakiness makes it hard to validate unrelated changes.
+  This aligns omelasticsearch tests with ES 7.14 defaults to get the
+  testbench back to a deterministic state and pave the way for further
+  modernization.
+  Impact: test behavior changes; one test skipped; CI coverage slightly reduced.
+  Before: tests mixed ES 6-era types and ad-hoc tarball picks; deprecation
+  checks intermittently failed and retries were brittle. After: tests use the
+  7.14.1 tarball via diag.sh default, typeless mappings, and `_doc` type in
+  omelasticsearch actions; known-flaky bulk-retry test is skipped for now.
+- 2025-09-17: imtcp: warn on TLS handshakes received on plain listeners
+  Admins often report "gibberish" when a TLS-enabled sender connects to a
+  plain imtcp port. Making the mismatch explicit reduces operator confusion
+  and support churn, and points directly to remediation.
+  Impact: logs one explicit error per mismatched connection; no change to
+  parsing or transport on plain listeners.
+  Before/After: before, ClientHello bytes were ingested as binary with no
+  hint; after, imtcp detects a TLS ClientHello on ptcp and logs a clear
+  message with a troubleshooting URL.
+  Technically, we add a small per-session probe in tcps_sess_t and sample
+  the first 5 bytes of new sessions. If the record header matches a TLS
+  handshake (type 0x16, version 0x03.00–0x04, length 40–16384) and the
+  listener is plain TCP (streamDriver.mode=0), we emit a single error and
+  disable further probing for that session. The probe is called from
+  DataRcvd() and returns RS_RET_SERVER_NO_TLS when triggered; the session
+  is otherwise left untouched.
+  Runtime: introduce RS_RET_SERVER_NO_TLS (-2465) to tag the condition.
+  Docs: add imtcp troubleshooting section and a dedicated FAQ page.
+  Tests/tools: add test imtcp-tls-gibberish.sh and extend tcpflood with
+  -H to send only a ClientHello (OpenSSL and GnuTLS paths tolerate early
+  termination and non-blocking I/O for this mode).
+- 2025-09-17: build: fix err on systems with pkg-config but not libgcrypt-config
+  Build did not succeed on some platforms due to invalid confgure check.
+  This has been resolved.
+  The AC_CHECK_PROG macro requires a value-if-found parameter
+  and an optional value-if-not-found parameter
+  Fix by adding the value-if-found parameter
+  Also handle the situation where there's no libgcrypt.pc
+  file for libgcrypt versions before 1.8.4
+  Thanks to Zhang Wen for analysis and patch.
+- 2025-09-16: core: add fromhost-port message property
+  Some deployments need to disambiguate multiple senders sharing an IP,
+  for example autossh or similar tunnel setups. Exposing the source port
+  improves observability and lets pipelines key on a stable tuple.
+  Impact: new property/JSON field; tcps_sess IF v4; out-of-tree modules
+  must rebuild.
+  Before: messages exposed fromhost and fromhost-ip only.
+  After:  messages also expose fromhost-port and jsonmesg includes it.
+  Introduce PROP_FROMHOST_PORT and wire it through msg.{h,c}. For TCP,
+  capture the remote port on accept, store it in tcps_sess, and attach it
+  to the msg on submit. For other inputs, resolveDNS derives the port from
+  the sockaddr when available; local inputs return an empty string. Add a
+  getter, duplication and destructor handling, and name<->ID mapping. Add
+  the field to jsonmesg output. Update docs, lexer keywords, and the
+  external plugin interface doc (property is modifiable). Bump
+  tcps_sessCURR_IF_VERSION to 4 and add SetHostPort() to the interface.
+  Include a focused test (fromhost-port.sh) that verifies the property.
+  Non-technical rationale: allow identification by (fromhost-ip,
+  fromhost-port) where IP alone is shared across systems (e.g., autossh).
+- 2025-09-15: tls: process TLS 1.3 KeyUpdate during send (ossl/gtls)
+  Handle post-handshake KeyUpdate by driving a minimal non-blocking read when the
+  TLS library requests READ during Send(). This prevents stalls when servers send
+  TLS 1.3 KeyUpdate and aligns behavior with RFC 8446 §4.6.3.
+  - nsd_ossl.c: SSL_ERROR_WANT_READ => small SSL_read(), then retry write
+  - nsd_gtls.c: E_AGAIN/E_INTERRUPTED with READ direction => small gnutls_record_recv(), then retry write
+  Backward-compatible and only active when the TLS stack signals a need to read.
+  Implemented with help for Cursor tool by Andre Lorbach.
+  closes: https://github.com/rsyslog/rsyslog/issues/5627
+- 2025-09-12: docker: fix collector, udp and tcp could not be enabled individually
+  If either one was disabled, so was the other one as well.
+- 2025-09-11: ommongodb: add support for mongo-c-driver v2
+  Update pkg-config check for v2 of mongo-c-driver
+  The name of the pkg-config file has changed from libmongoc-1.0.pc to
+  mongoc2.pc. First try the new version and keep the old version as
+  fallback.
+  In version 1.13.0, the headers were re-organized and the preferred way
+  of including the headers are <mongoc/mongo.h> and <bson/bson.h>.
+  Forwarding headers to keep backwards compatibility were introduced that
+  have been removed in v2.
+  To support building on CentOS 7 and Ubuntu 18, which ship versions older
+  than 1.13.0, keep using the old include names for v1 and use the new
+  include names for v2.
+  Once the minimum version of mongo-c-driver is bumped to >= 1.13.0, this
+  fallback can be dropped.
+  Thanks: Michael Biebl for the patch and his help on the issue in general.
+- 2025-09-10: config script: add b64_decode function
+  This PR provides a new Rainerscript function: b64_decode.
+  This function is based on RFC4648.
+  Thanks to Kevin Guillemot for the patch.
+- 2025-09-09: imdocker: Add image name to metadata fields
+  Exposes the image name and tag of the source container (what the Docker API simply
+  calls Image) as an additional metadata value alongside the existing ones.
+  Why?
+  While the ImageID is available today, a SHA hash is not a particularly user-friendly
+  way to identify what is actually generating the logs.
+  The image name provides a simple, easy-to-read identifier for the common scenario
+  where an unmodified application image is used.
+  Thanks to Will Robertson for the patch.
+- 2025-09-09: ci: improve Codecov uploads; deflake kafka topics
+  Motivation: code coverage reports were incomplete. This lays a better
+  base for consistent reporting via GitHub Actions, with room for follow-ups.
+  It also removes a test flake source in Kafka jobs.
+  Impact: CI/tests only; no runtime behavior or ABI changes expected.
+  Before: Coverage uploads were inconsistent; Kafka tests could hang while
+  reading from /dev/urandom to generate topic names.
+  After: Coverage is collected with lcov and uploaded via a dedicated GH
+  Action; Kafka topics use fast $RANDOM-based hex, avoiding early-boot
+  entropy stalls.
+- 2025-09-06: rainerscript: add toupper() function
+  Add a RainerScript function to convert strings to uppercase. The
+  implementation mirrors tolower() but operates per-byte using
+  toupper(). Tests demonstrate the new function, documentation and
+  ChangeLog entries added.
+  closes: https://github.com/rsyslog/rsyslog/issues/3666
+- 2025-09-06: devtools: Specify usage of clang-format-18 to pin v18
+  Thanks to Will Robertson for the patch.
+- 2025-09-05: CI: re-enabled CodeCov integration
+  There may still be some quirks, but basically it works again.
+- 2025-09-05: doc: restore missing doc files in configure.ac
+  The docs build has been failing because doc/source/conf_helpers.py was
+  removed, but Sphinx imports it from conf.py. This reintroduces the
+  helper module so the documentation can be built again.
+  Regression introduced by:
+  https://github.com/rsyslog/rsyslog/commit/ba762b653331f3c97ba2da91cf6a0ab602e6243c
+  Impact: restores local and CI doc builds; no runtime behavior change.
+  Before: sphinx-build failed with ImportError for conf_helpers.
+  After:  sphinx-build completes successfully.
+- 2025-09-04: build: use pkg_config for libgcrypt
+  This fixes failing builds in newer platforms.
+  Old method had been depricated and finally is no longer available. We fall
+  back to old method if pkg_config for libgcrypt is not available on the build
+  system.
+  Thanks to github user schrotthaufen for the patch.
+- 2025-09-03: omrelp: keep-alive support added
+- 2025-09-03: build: some cross-platform enhancents, especially for
+  MacOS/Darwin
+- 2025-09-03: tests: add -w port file option to tcpflood
+  Adds -w option to tcpflood to write its local port to a file.
+  This permits to craft tests which need the source port number from the
+  connecting client.
+- 2025-09-03: imhttp: optional auth + Content-Length for metrics/health
+  Harden default endpoints for cloud-native use: make health/metrics
+  scrapes proxy-friendly and allow locking them down with Basic Auth.
+  This aligns imhttp with common Kubernetes/Prometheus patterns and
+  supports metrics-only deployments.
+  Impact: /metrics now exports full rsyslog stats with Content-Length;
+  health and metrics can be gated via htpasswd; unified 500 on failures.
+  Technical details:
+  - Add module params: healthCheckBasicAuthFile and metricsBasicAuthFile.
+    When set, attach a Basic Auth handler that reads an htpasswd file;
+    reuse the same handler for per-input endpoints by passing the file via
+    cbdata.
+  - Rework Prometheus handler to collect data through statsobj in
+    Prometheus format. Accumulate lines into a growable buffer with
+    overflow checks, append an imhttp_up gauge, then reply with an
+    explicit Content-Length and close the connection.
+  - Fix metrics buffer termination to use a single NUL byte; prevent a
+    leak when buffer growth fails; consolidate error paths so the buffer is
+    freed and a single HTTP 500 is emitted.
+  - Docs: describe new auth options, clarify default paths, document that
+    metrics responses carry Content-Length, and add examples (including
+    metrics-only setups).
+  Before/After: metrics previously exposed a minimal body without auth;
+  now they export full rsyslog stats with optional Basic Auth and a
+  Content-Length header.
+- 2025-09-02: imrelp: fix potential segfault on termination
+  A segfault could occur during module termination within the rsyslog shutdown
+  process. That in turn could lead to e.g. damage state files or disk queue
+  files.
+  Thanks to Sourav Sharma for analyzing and fixing this issue.
+- 2025-08-28: core/queue: some refactoring for better code clarity
+  The enhanced clarity not only helps with understanding but also is the bases
+  for better manual and automatted analysis, thus maintenance.
+- 2025-08-28: CI: ensure static analyzer script only runs when actually needed
+  Also
+  - auto-abort on re-push
+  - some minor tweaks
+- 2025-08-28: ci: add spellcheck workflow
+  Add a GitHub Actions job using codespell to check Sphinx docs in doc/source.
+  This helps catch spelling errors early and improves documentation quality.
+  With help from AI-Agent: ChatGPT
+- 2025-08-28: CI: add github action security analysis
+  Thanks to Kevin Backhouse for the patch.
+- 2025-08-28: doc: systematic typo fixes for documentation files, add checker
+  After we received single typo fixes, we carried out a systematic approach
+  for the rest of the documentation. It should now be typo-free.
+  As a safeguard, we added a new CI action for doc spellchecking.
+- 2025-08-28: doc: fix typos
+  Thanks to Madhushree and Naisthecreator for the patch.
+- 2025-08-28: doc: add rsyslog issue assistant build files
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2508.0 (aka 2025.08) 2025-08-26
+
+IMPORTANT NOTE TO Package Builders / Distros:
+
+The documentation has been integrated back into the main repository, in the
+doc/ subdirectory. As such, there is no second doc tarball available and
+package build most probably needs adjustments.
+
+This release had the overall theme of improving code quality, including the
+initial introduction of doxygen comments, improving the user experience by
+documentation updates, and implementing the rsyslog responsible "AI First"
+strategy. Note that while AI generated code is part of the release, all
+contributions, AI or human, follow the same rigourus review and CI procedures
+with the final acceptance is by a maintainer.
+
+AI slop is not accepted and this release addresses AI slop by better parametrizing
+agents in regard to code generation and streamlining code so that AIs better
+understand it. This is an ongoing effort.
+
+- 2025-08-25: tcpsrv: refactor IO loop; rearm-before-unlock; poll path
+  Improve maintainability and robustness of the TCP server by clarifying
+  locking/ownership, tightening invariants, and simplifying queueing.
+  Also fix a long-standing pragma macro typo across the tree.
+  Impact: Internal behavior only. EPOLL re-arm now occurs while holding
+  pSess->mut; starvation cap counts only successful reads.
+  Before/After:
+  Before: EPOLL re-arm happened after leaving the critical section; read
+  starvation cap counted loop iterations; closeSess() sometimes unlocked;
+  select_* helpers used on non-epoll path; enqueueWork() returned status.
+  After: EPOLLONESHOT is re-armed before unlocking; starvation cap counts
+  only RS_RET_OK reads; closeSess() never unlocks; poll_* helpers replace
+  select_*; enqueueWork() is void (best-effort).
+  Technical details:
+  - Replace notifyReArm() with rearmIoEvent() (EPOLL_CTL_MOD with
+    EPOLLONESHOT|EPOLLET; asserts efd/sock; logs on failure).
+  - doReceive(): explicit state machine; would-block path re-arms before
+    unlock; close path unlocks then calls closeSess(); starvation handoff
+    enqueues without re-arming.
+  - Initialize ioDirection for listener and session descriptors; add
+    assert(sock >= 0) and widespread ATTR_NONNULL annotations.
+  - startWrkrPool(): single finalize rollback (cancel/join partial
+    threads; destroy cond/mutex); stopWrkrPool(): destroy cond/mutex.
+  - enqueueWork(): FIFO append under lock and cond signal; returns void.
+  - Cleanup hardening on construct failure: free ppLstn, ppLstnPort,
+    ppioDescrPtr; free fromHostIP on SessAccept() error.
+  - Non-epoll: rename select_Add/Poll/IsReady -> poll_*; RunPoll() uses
+    poll_* and sets sane ioDirection defaults.
+  - Typo fix: standardize PRAGMA_IGNORE_Wswitch_enum in header and all
+    users (action.c, rainerscript.c, template.c, tcpsrv.c).
+- 2025-08-25: omsendertrack: stop towards full completion of module.
+  Work towards full completion of the module’s interface as it exits PoC.
+  The new name senderid (formerly: template) matches intent (identify a
+  sender, not an output format) and avoids confusion.  Also make state
+  persistence safer via atomic writes.
+  Merged a bit pre-completion in order to get a static analyzer fix
+  into the main code base. Some additional cleanup PR will follow.
+  State is much cleaner now than in PoC.
+  Impact: Configs must use senderid=; statefile is now required. Tests
+  and docs updated.
+  Before/After: action(... template="name") -> action(... senderid="name").
+  Technical details:
+  - Replace the config parameter and instance field; drop legacy template
+    parsing in parseSelectorAct. The module now reads only senderid=.
+  - Enforce required statefile (descriptor + runtime) and cache a temp
+    path "<statefile>.tmp" to ensure rename() is atomic. Provide a
+    one-time fallback build if the cache is missing (e.g., reload flow).
+  - Add built-in template "StdOmSenderTrack-senderid" yielding
+    "%fromhost-ip%" and use it as the default senderid template.
+  - Improve memory ownership (free cached temp path/default template) and
+    keep existing locking/queue semantics unchanged.
+  - Update tests to use senderid= and prune PoC doc note accordingly.
+  see also: https://github.com/rsyslog/rsyslog/issues/5599
+- 2025-08-20: AI: add support files for github copilot
+  helps craft better patches via copilot
+- 2025-08-18: imjournal: fix double sd_journal_close() during thread cancellation
+  When the main thread cancel imjournal thread, the thread exits without
+  setting sd_journal to NULL because sd_journal_close() contain cancel point.
+  This leads to a double free scenario where:
+  1. The thread cancel occurs during sd_journal_close()
+  2. The main thread then calls imjournal's afterrun function
+  3. sd_journal_close() is called again on the already-freed sd_journal
+  Thanks for the patch toxietangxin
+- 2025-08-18: omhttp: migrate to OMODTX; prep for project-supported status
+  Why: Modernize omhttp so HTTP forwarding is viable and maintainable in
+  current deployments (incl. Docker). Align the module with core-supported
+  interfaces, reduce maintenance risk, and pave the way to promote it from
+  contrib to an officially supported module.
+  Technical overview (conceptual):
+  - Switch plugin API from legacy TXIF (doAction) to OMODTX
+    (commitTransaction). Update query entry points accordingly.
+  - Keep beginTransaction for batch init; fold the final flush from
+    endTransaction into commitTransaction per OMODTX.
+  - Preserve external behavior: batching thresholds (maxBatchSize and
+    maxBatchBytes), dynRestPath handling, statistics, and HUP behavior.
+  - In commitTransaction, process all records in one pass and submit
+    batches when thresholds are crossed; non-batch mode posts per record.
+  - Retry test adjusted to tolerate duplicates during migration
+    (omhttp-retry.sh), reflecting current OMODTX replay characteristics.
+  Addresses from #5957:
+  - Core modernization of omhttp to the project’s current module
+    interface, suitable for containerized use cases.
+  - First step toward “project-supported” status by aligning with the
+    supported core API and updating tests.
+  Planned follow-ups (separate commits):
+  - Fix dynRestPath after a batch flush (set new path right after
+    initializeBatch).
+  - Revisit commit/replay semantics to minimize duplicates under retry, or
+    document dup-tolerant behavior and test both modes.
+  - Verify and free batch.restPath and headerBuf; add focused tests (path
+    change mid-batch, maxBatchBytes edges, TLS/gzip, HUP reinit).
+  - Documentation and packaging steps required for “project-supported”
+    status (module docs, release notes, CI/packaging policy).
+  - Evaluate if a compatibility query hook is needed for older cores.
+  see also: https://github.com/rsyslog/rsyslog/issues/5957
+- 2025-08-15: rainerscript: enhanced backticks support ${VAR}
+  This implements brace-style env vars inside backticks with `echo` and
+  fixes termination of unbraced `$VAR`. Most importantly, variables can
+  now be adjacent to static text (e.g., `foo${ENV}bar`), which previously
+  did not work and caused confusion. This aligns behavior with common
+  bash expectations.
+  Why
+  - Users expect `${VAR}` and `$VAR!` to expand while keeping punctuation.
+  - Concatenations like `foo${ENV}bar` are common and should be valid.
+  What
+  - Add support for braced variables `${VAR}` with proper `}` handling.
+  - For unbraced `$VAR`, stop the name at the first non `[A-Za-z0-9_]`
+    char and emit that char (e.g., `!`, `.`) as literal output.
+  - Improve error handling for overlong env var names.
+  - Keep other shell features (e.g., `$(pwd)`) unsupported by design.
+  Docs
+  - Update `constant_strings.rst` to document `${VAR}`, the new
+    termination rules, and examples including `foo${ENV}bar` and `$VAR!`.
+  Tests
+  - Add `rscript_backticks_braces_envvar.sh` for `${VAR}` support.
+  - Add `rscript_backticks_static_text.sh` for `$VAR!` and adjacency.
+  - Convert `rscript_backticks_empty_envvar-vg.sh` to non-VG variant and
+    adjust `tests/Makefile.am`.
+  Compatibility
+  - Backward compatible. Changes affect only previously broken edge cases.
+- 2025-08-13: improved developer documentation
+  - internal locking needs / action interface
+  - control flow for actions / queues
+  - removes any doubts that might have existed due to missing docs
+  - improves onboarding new developers
+- 2025-08-01: core: migrate callback invocations to type-safe signatures
+  Replace opaque/variadic callback usage with explicit, type-safe function
+  signatures to reduce undefined behavior and clarify intent.
+  Adapter helpers bridge the existing APIs without raw variadic casts, enabling
+  the transition incrementally. Callback setup sites are standardized for
+  consistent readability. This tightens the contract on callbacks, eases future
+  refactoring, and makes their roles more self-documenting.
+  Inspired by https://github.com/rsyslog/rsyslog/pull/5882
+  With AI support: Codex, Gemini
+- 2025-08-01: Fix: Remove unsafe function pointer casting in cfsysline.c
+  - Replaced function pointer casting with direct handler calls for type safety
+  - Fixes crashes (BUS errors) on ARM64 macOS 14+ due to strict calling conventions
+  - Root cause identified by ThreadSanitizer
+  - Eliminates undefined behavior, improves code safety
+  On MacOS, this fixes a potential segfault condition.
+- 2025-08-01: ossl: Add PrioritizeSAN option to OpenSSL network stream driver
+  Add OpenSSL equivalent of existing GnuTLS PrioritizeSAN functionality
+  implemented in commit 937e278fdf51c3e21ebd3acf05f9d1b8649ce2c5
+  https://docs.openssl.org/1.1.1/man3/X509_check_host
+  > The X509_CHECK_FLAG_NEVER_CHECK_SUBJECT flag causes the function to
+  > never consider the subject DN even if the certificate contains no
+  > subject alternative names of the right type (DNS name or email address
+  > as appropriate); the default is to use the subject DN when no
+  > corresponding subject alternative names are present.
+  0x10100004L corresponds to OpenSSL 1.1.0-pre4 in which
+  X509_CHECK_FLAG_NEVER_CHECK_SUBJECT first appeared.
+  Thanks to Corey Siltala for the patch.
+- 2025-08-01: core: fix race condition in imtcp when closing sessions
+  This commit fixes a race condition that could occur when two threads tried to close
+  the same TCP session simultaneously. This could lead to an "epoll_ctl failed:
+  Bad file descriptor" error message.
+  The fix introduces an atomic flag `being_closed` to the `tcps_sess_t` struct.
+  This flag is used to ensure that the session-closing logic is executed only once
+  per session.  This commit also corrects the logic of the atomic check to prevent
+  the race condition correctly.
+  This was created with the help of Google Jules AI coding agent.
+- 2025-07-31: pmrfc3164: add headerless message detection and handling
+  This patch adds a robust, optional mechanism for handling "headerless" input—
+  log messages that do not conform to traditional syslog formatting.
+  - **Headerless detection (opt-in)**
+    - Controlled by the new `detect.headerless` boolean (default: off)
+    - Detects messages with **no PRI** and **no valid timestamp**
+    - Excludes structured inputs (e.g. JSON starting with `{` or `[`) as
+      before
+    - Injects default `hostname` and `tag` values
+    - Flags message internally as `HEADERLESS_MSG` for further processing
+  - **Fallback processing options**
+    - `headerless.ruleset`: route headerless messages to a dedicated ruleset
+    - `headerless.errorfile`: optionally store raw input to a file
+    - `headerless.drop`: discard headerless messages early if desired
+  - **Thread-safe HUP signal handling**
+    - New `doHUPParser` entry point allows safe log rotation for error file
+    - Follows standard reopen-on-write pattern post-HUP
+  - **Testing & Maintenance**
+    - Adds two test cases: `pmrfc3164-headerless.sh` and `pmrfc3164-drop.sh`
+    - Extends documentation for all new parameters
+    - Cleans up code formatting, includes, and bumps copyright
+  Some environments produce mixed or malformed input streams. This patch enables
+  early, lightweight detection of non-syslog input, with customizable recovery
+  and routing strategies. It avoids unnecessary parsing work and gives operators
+  better tools to isolate or discard garbage input—without breaking legacy behavior.
+- 2025-07-31: imjournal: fix vulnerability in state file creation
+  Initialize cs.fCreateMode to 0644 instead of -1 to prevent state files
+  from being created with all permission bits set when legacy configuration
+  is used. The setModCnf function is only called with modern configuration,
+  leaving cs.fCreateMode at -1 for legacy configs, which results in wrong
+  open() calls.
+  Thanks to Attila Lakatos for the patch.
+- 2025-07-31: doc fix: remove doc for debug options that no longer exist
+  Some debug options were removed several years ago but unfortunately
+  not removed from the doc. This is now done.
+  closes: https://github.com/rsyslog/rsyslog/issues/4817
+- 2025-07-29: gtls fix: log missing certificate/key only once
+  When no TLS certificate or key is configured for forwarding actions,
+  repeated connection attempts produced the same warning messages over and
+  over. gtlsInitCred() and gtlsAddOurCert() now log these warnings only
+  during the initial setup
+  Thanks to Attila Lakatos for the patch.
+- 2025-07-22: greatly restructured and improved documentation
+  It is in far better shape now, but there are still improvements
+  planned and needed.
+- 2025-07-19: Correct connection timing computation
+  Handle microsecond rollover when measuring connection attempts.
+  Calculate seconds and microseconds directly, adjusting when the
+  microsecond field underflows.
+  Fixes https://github.com/rsyslog/rsyslog/issues/5831.
+- 2025-07-17: omelasticsearch fix: Handle HTTP 401/403 auth errors
+    The omelasticsearch module previously failed to correctly handle HTTP
+    error status codes returned by the server. The logic checked for
+    libcurl transport errors but explicitly ignored
+    'CURLE_HTTP_RETURNED_ERROR', causing server-side errors to be
+    treated as successful submissions.
+    This led to silent failures in critical scenarios, especially
+    authentication (401 Unauthorized) and authorization (403
+    Forbidden) errors. The plugin would not suspend or report an
+    error, and data could be lost without any clear error indication.
+    This commit resolves the issue by:
+    - Retrieving the HTTP status code after each request using
+      'curl_easy_getinfo'.
+    - Adding an explicit check for 401 and 403 status codes.
+    - Logging a specific "authentication failed" error and suspending
+      the plugin if these errors are detected.
+    This ensures that users receive immediate and clear feedback on
+    authentication problems, preventing silent data loss and aiding in
+    faster troubleshooting.
+    With AI support: Codex, Gemini
+- 2025-07-16: style: normalize C source formatting via clang-format (PoC)
+  Changed to the new canonical formatting style using `clang-format` with
+  custom settings (notably 4-space indentation), as part of our shift toward
+  automated formatting normalization. No functional changes are included -
+  only whitespace and layout modifications as produced by `clang-format`.
+  This change is part of the formatting modernization strategy discussed in:
+  https://github.com/rsyslog/rsyslog/issues/5747
+  Key context:
+  - Formatting is now treated as a disposable view, normalized via tooling.
+  - The `.clang-format` file defines the canonical style.
+  - A fixup script (`devtools/format-code.sh`) handles remaining edge cases.
+  - Formatting commits are added to `.git-blame-ignore-revs` to reduce noise.
+  - Developers remain free to format code however they prefer locally.
+  In support of this strategy also did:
+  - add .editorconfig for indent, whitespace, and file-type rules
+  - add project-local .vimrc to enforce Vim settings via exrc
+  - add .clang-format for C/C++ style presets and list formatting
+  - add devtools/format-code.sh to run clang-format and fixups
+  - adjust clang-format config for stable, idempotent output
+  - update AGENTS.md with new formatting strategy
+  - add .git-blame-ignore-revs entry for format change commit
+- 2025-07-15: feat: introduce mmaitag PoC with Gemini AI provider (#5754)
+  This commit adds the initial implementation of the `mmaitag` module,
+  a pluggable AI-based message classification processor.
+  The module supports two providers:
+  - `gemini`: uses the Gemini API via libcurl and JSON-C
+  - `gemini_mock`: a deterministic in-memory mock used for testing
+  Each log message is classified individually and tagged with a label
+  stored in a configurable message variable (default: `$.aitag`).
+  Included:
+  - Provider abstraction layer (`ai_provider.h`)
+  - Gemini provider with API key support (inline or via file)
+  - Prompt customization and input property selection
+  - Two regression tests: basic and invalid-key scenarios
+  - Sphinx documentation under `doc/configuration/modules`
+  Note: mmaitag is in its infancy and primarily a PoC. Future work
+  will improve batching, performance, and add more providers.
+  Refs:
+  - https://github.com/rsyslog/rsyslog/issues/5747 (AI-first strategy)
+  With the help of AI Agents: Codex, Gemini
+- 2025-07-15: doc: add FAQ with commonly misunderstood config sequences
+  "& stop" is right on top of the misunderstandings
+- 2025-07-15: code fix: Prevent redefinition warnings for syslog macros
+  Undefine common syslog severity and facility macros before
+  redefining them in rsyslog.h. As rsyslog, we need consistent
+  definitions. This resolves "redefined" warnings when other
+  system headers are included. Improves build cleanliness.
+- 2025-07-15: imhttp: add simple http health check functionality
+  This also includes a basic Prometheus scrape entry point, which
+  currently can only be used for health checking.
+  We plan futher enhancement in this direction.
+  Also some "fixes" in regard to rsyslog code style and portability
+  methods.
+- 2025-07-15: impstats: add support for Prometheus metrics output format
+  This commit extends the impstats input module to support a new
+  "prometheus" format for exporting statistics. The output is
+  generated via statsobj.c, which already provides Prometheus-
+  compatible formatting.
+  To enable this, a new "format" config option value ("prometheus")
+  was added and recognized by impstats.c. When selected, impstats
+  invokes the appropriate statsobj function to generate output in
+  Prometheus exposition format.
+  The default behavior remains unchanged. Existing formats such as
+  "json" and "legacy" are not modified.
+  A new test has been added under tests/ to validate correct
+  Prometheus output generation. The test verifies that the format
+  header and at least one representative metric line conform to the
+  Prometheus text format specification.
+  This enhancement enables rsyslog to integrate more easily with
+  Prometheus-based monitoring stacks and paves the way for native
+  metrics scraping without external translation layers.
+- 2025-07-15: fmpcre: new function module to do pcre-based regex matches
+- 2025-07-15: build: adjust version tag used for daily stable build process
+  Change version tag from ".master" to ".daily" to better reflect its
+  use in the automated daily stable build process. This also aligns with
+  the ongoing effort to eliminate use of the "master" name throughout the
+  repository.
+  see also: https://github.com/rsyslog/rsyslog/issues/5786
+- 2025-07-15: imfile: add new module/input parameter deleteStateOnFileMove
+  When enabled, state files are deleted when the watched file is moved or
+  rotated away.  This prevents accumulation of stale state files from
+  rotated logs.  By default the state file is kept. Does not change
+  default behavior for existing inputs.  The config option is available as
+  per-input and per-module parameter.
+  Thanks to Attila Lakatos for the patch.
+- 2025-07-15: refactor: modernize macro definitions to support formatting and clarity
+  This commit performs a broad modernization of widely used rsyslog
+  macros to align with modern C practices and support automated
+  formatting tools like clang-format. The changes focus on improving
+  syntactic regularity, readability, and tooling compatibility — without
+  altering behavior.
+  Macros refactored in this commit now follow a consistent,
+  statement-like form with explicit trailing semicolons. Where
+  applicable, macro blocks that define module interfaces (`queryEtryPt`)
+  have been updated to use simple `if` statements instead of `else if`
+  chains. While this slightly increases evaluation time, the affected
+  functions are only called once per module during load time to register
+  supported interfaces — making the performance cost irrelevant in
+  practice.
+  These improvements serve multiple purposes:
+  - Enable reliable clang-format usage without mangling macro logic
+  - Simplify reasoning about macro-expanded code for human readers
+  - Reduce style drift and merge conflicts
+  - Facilitate development for contributors using assistive tools
+  - Support future formatting pipelines using:
+    1. `clang-format`
+    2. a post-fixup normalization script
+  This general modernization reduces macro misuse, improves DX, and
+  lays the foundation for a robust, automated style normalization
+  system.
+  See also: https://github.com/rsyslog/rsyslog/issues/5747
+- 2025-07-12: Document statsobj architecture and formats
+  Adds Doxygen headers to runtime/statsobj.c and runtime/statsobj.h.
+  The comments describe how statistics objects store counters and how
+  GetAllStatsLines emits data. Supported output formats such as
+  legacy, JSON, CEE, JSON_ES and Prometheus are listed. This clarifies
+  the stats subsystem for future maintainers.
+  AI-Agent: Codex, Gemini
+- 2025-07-12: Improve TLS handshake error logging (#5762)
+  Log remote port on TLS handshake errors, this has been implemented
+  at the netstream driver layer and is now easy to support by all drivers.
+- 2025-07-12: merge: import rsyslog-docker into packaging/docker/
+  This commit integrates the full history of the
+  rsyslog/rsyslog-docker GitHub repository into the main rsyslog
+  monorepo under packaging/docker/.
+  The merge was performed on 2025-07-12 using 'git subtree add' to
+  preserve all commit history in a clean and non-interleaved form.
+  No changes were made to the imported content during this commit.
+  Rationale:
+  - Unify Docker artifacts with the core rsyslog development
+  - Reduce repository fragmentation
+  - Improve discoverability and cross-component development
+  - Simplify CI integration and contributor workflow
+  The original rsyslog-docker repository will be archived in
+  read-only mode. All future work on Docker images and related
+  tooling will continue under packaging/docker/ in this repository.
+  This merge is part of a broader effort to consolidate related
+  rsyslog projects into a complete, maintainable monorepo.
+- 2025-07-11: scripting: add endswith operator to property filters and RainerScript
+  This Implements suffix comparison similar to startswith. Note that we
+  do intentionally not use libestr functions in order to speed up adaption.
+  It would otherwise probably take years for distros to upgrade libestr.
+  With some help of the Codex and Gemini AI Agents.
+  closes https://github.com/rsyslog/rsyslog/issues/1255
+- 2025-07-11: nsd_ptcp fix: misleading error messages (regression from ad1fd21)
+  We received reports of log messages incorrectly referring to "imptcp" even
+  though the imptcp module was not loaded on the system. This caused confusion
+  during troubleshooting.
+  One such message was:
+    rsyslogd: imptcp cannot set keepalive intvl - ignored: Bad file descriptor
+  This message originated from the nsd_ptcp module, but the LogError() calls
+  in EnableKeepAlive() still used "imptcp" as the source name.
+  This is a regression introduced in commit ad1fd21, which restructured
+  TCP input handling and moved responsibility for keepalive setup to nsd_ptcp,
+  but did not update the associated log messages.
+  This patch corrects the affected log strings to use "nsd_ptcp", accurately
+  reflecting the code path that emits them.
+  There is no functional change; the patch improves clarity of log output and
+  prevents misleading diagnostics.
+  The actual error shown could be related to a different issue,
+  see also https://github.com/rsyslog/rsyslog/pull/5749
+- 2025-07-11: omazureventhubs bugfix: unsafe sprintf use in module
+  we now use snprintf for url encoding; this was under very exotic conditions
+- 2025-07-09: imtcp: prevent double-enqueue of descriptors via inQueue flag
+  This patch adds an inQueue flag with its own mutex to each
+  tcpsrv_io_descr_t structure. The flag prevents multiple worker threads
+  from processing the same descriptor at the same time.
+  The change was motivated by segmentation faults reported in production
+  systems after commit ad1fd21, which introduced a worker thread pool to
+  imtcp. We could not reproduce the faults ourselves, but code analysis
+  suggests several race conditions may exist.
+  In particular:
+  - epoll_wait may return the same descriptor multiple times. This is not
+  expected, as we use EPOLLONESHOT. However, if a thread does not clear
+  or re-arm the event quickly enough, or in edge cases involving race
+  conditions and rapid I/O activity, duplicate delivery may still occur.
+  - If a descriptor is enqueued more than once, multiple threads may
+  process and free it in parallel, causing use-after-free errors.
+  - closeSess releases the session mutex before destroying the session and
+  descriptor. A second thread might still be waiting to acquire the
+  mutex and access the now-freed memory.
+  - shutdown is unordered: stopWrkrPool waits for threads to join, but the
+  work queue may still contain descriptors that will be processed after
+  their memory has been freed.
+  - pending epoll events for a socket may still be processed after
+  epoll_ctl(..., DEL) was called, leading to access to invalid memory.
+  The patch:
+  - Adds an inQueue flag to each descriptor and a mutex to protect it.
+  - Prevents enqueueWork from queuing a descriptor already in queue.
+  - Clears the flag when dequeueing the descriptor.
+  - Initializes and destroys the new mutex at listener startup/cleanup.
+  While unverified, we believe this patch is a safe and helpful change.
+  It may fix the reported crashes and in general improves correctness.
+  The analysis and draft of this patch were created with help from a
+  Codex-based AI agent. Final review and edits were done by a human.
+- 2025-07-09: imkmsg fix: Handle EAGAIN/EWOULDBLOCK check portably
+  On some systems, EAGAIN and EWOULDBLOCK are defined to the same
+  value, causing a `-Wlogical-op` warning for the redundant logical
+  'or' in the errno check.
+  While portable code must check for both cases, this warning is
+  unwanted.
+  This change uses a preprocessor directive to conditionally compile
+  the check for `errno == EWOULDBLOCK` only on platforms where its value
+  differs from EAGAIN. This silences the warning without affecting
+  portability.
+- 2025-07-09: AI tools: Add directory for future AI/ML tooling (#5758)
+  Establish a new top-level directory, `ai/`, to serve as a consistent
+  location for future Artificial Intelligence and Machine Learning tools
+  that will work alongside rsyslog.
+  These tools are intended to run as separate processes, external to the
+  rsyslog daemon, to ensure the core remains stable and performant.
+  This commit contains only the empty directory and a README.md file
+  describing the vision and purpose.
+- 2025-06-21: fix off-by-one buffer "overflow" when forking rsyslog
+  parent and child communicate over a very basic protocol during the fork process.
+  In theroy, there could be a buffer overrun during that period. In practice, this
+  is not possible due to the protocol. It would only be possible if the rsyslog
+  binary would be compromised itself on disk- or in-memory. Nevertheless, this
+  possibility should be closed, as slim as it may be.
+  Thanks to Maks Maltsev for the patch.
+- 2025-06-19: added doc for omsendertrack
+- 2025-06-18: net_ossl: Fix memleak in net_ossl_peerfingerprint
+  Fix memory leak where pstrFingerprintSha256 was not being freed
+  in the finalize_it section. This could cause memory accumulation
+  during TLS certificate fingerprint verification when the function
+  exits.
+  Thanks to Attila Lakatos for the patch.
+- 2025-06-18: Support for AI Agents has been added
+  This is an ongoing effort which aligns with the projects "AI-first" approach.
+  The date this was added is just the date of "initial maturity". As AI field
+  is quickly evolving, we need to update this support in any case.
+- 2025-06-15: doc: Documentation repository moved into main rsyslog repo
+  The rsyslog-doc repository content has been integrated into the
+  main rsyslog repository under the 'doc/' directory. This change
+  simplifies maintenance, improves discoverability, and resolves
+  issues with external tools locating documentation. It also
+  streamlines build pipelines and reduces external dependencies.
+  The commit history of rsyslog-doc has been preserved via a Git
+  subtree merge.
+- 2025-06-12: build: Removed the redundant *_la_LDFLAGS
+  Whilst this did not cause issues when building the project, it produced
+  warnings.
+  Thanks to Attila Lakatos for the patch.
+- 2025-06-12: ossl netstream driver: do not import engines if not available
+  Avoid including openssl/engine.h when OPENSSL_NO_ENGINE is set. Adjust dependent
+  modules and test accordingly.
+  Thanks to Attila Lakatos for the patch.
+- 2025-06-12: tcpsrv bugfix: fix potential data race issue
+  When re-arming epoll descriptors, we used a non-thread safe way to do this. However,
+  it is hard to envison this could have caused any real issue because of the way the
+  logic accesses the data elements. But at least in theory on a system with very many
+  tcpsrv threads, many cores and very high load re-arm could probably done incorrectly
+  what could have lead to stalling of that connection.
+  This was detected during CI runs by LLVM thread analyzer. We never receive any report
+  of this from practice.
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2506.0 (aka 2025.06) 2025-06-10
+- 2025-06-10: core fix: hastable object did not init memory properly on extend
+  When a hash table was expanded, the newly allocated memory segment was not
+  cleared correctly. This was caused by providing an incorrect destination
+  address and byte-count to the memory-clearing function.
+  This could lead to instability or incorrect behavior when the hash table
+  grew. The new memory is now properly zero-initialized, ensuring stable
+  operation.
+- 2025-06-10: queue fix: spammy queue size message do to incorrect commit
+  Reverted commit 525a6f1bbf that tried to provide better diagnostics for
+  queues being potentially misconfigured that was invalid and created queue warning
+  messages on startup.  The functionality will be re-implemented properly later.
+  JThis is no loss of
+  functionality.
+- 2025-06-10: CI: new python-based codestyle checker
+  Easier to maintain than the off-project C source. The checks
+  are pretty trivial.
+  closes https://github.com/rsyslog/rsyslog/issues/5631
+- 2025-06-09: omfwd regression fix: avoid false active target change log message
+  Commit ffaf6dc added proper variable sync, but dropped the check
+  if active count had actually changed. As such, the output was always
+  generated, which could pollute the log heavily.
+- 2025-06-09: imuxsock: Add statistics counter for discarded messages
+  This patch introduces a counter to track the number of discarded messages.
+  Additionally, it fixes a bug where the submitted message count was incremented
+  even when the message was discarded due to exceeding the allowed message rate
+  within a given interval.
+  Thanks to Attila Lakatos for the patch.
+- 2025-06-08: lookup tables: add new table type for regex-matches
+  While we do not like rexeg-matches for performance reasons, they are
+  well known and appreciated by users. With the new table type, we
+  add a lookup capability for partial matches, but at the price
+  of much higher ressource use. It still is useful, e.g. to classify
+  events as "noise" events in a simple manner.
+- 2025-06-08: docs: restructure contributor docs for clarity and AI agent readiness
+  This updated all contributor-facing documentation:
+  - **README.md**: Modernized structure; clarified installation/build.
+    Removed obsolete local doc references, linked to rsyslog-doc.
+  - **CONTRIBUTING.md**: Refactored for clarity; added AI code guidance
+    (e.g., commit prefix `AI:`). Formalized draft PRs for experiments.
+    Removed outdated "testing new releases" advice. Added rationale
+    for `master` branch due to ecosystem dependencies.
+  - **AGENTS.md** (new): Introduces clear guidelines for AI agents
+    contributing to rsyslog. Includes commit formatting, PR branch
+    expectations, testing environment, and behavioral rules.
+  **Why now?**
+  Over two years, we've evaluated evolving AI dev agent capabilities.
+  We now consider them mature enough for rsyslog dev workflow—under
+  careful human review. This update provides the foundation to onboard
+  agents in a controlled, auditable, high-quality manner.
+  All changes prioritize traceability and developer clarity—both human
+  and AI.
+  closes: https://github.com/rsyslog/rsyslog/issues/5657
+- 2025-06-08: improved CI workflow
+- 2025-06-08: omazureeventhubs bugfix: wrong content-type used
+  This was detected during a code review. No report from practice is known. There was
+  a type in the content type definition when encoding the message. This can potentially
+  lead to malfunction.
+- 2025-06-06: omusrmsg: fixed a potentially unsafe string builder
+  While not expected to be problematic in practice, there still was some security
+  issue potential AND it prevented clean build in some environments.
+- 2025-06-05: impstats: add prometheus format to set of supported output formats
+  This can be used eg. to use node_exporter file scraping capability
+- 2025-06-04: omsendertrack: new module
+  The omsendertrack module is designed to track and report statistics for
+  message senders across all inputs in Rsyslog. It periodically outputs a
+  JSON file containing information about each sender.
+  Note: This commit provides minimalistic basic functionality as a PoC.
+  We will check it's usefulness in practice and expect follow-up PRs
+  to enhance functionality and include feedback from early testing.
+  However, this module is solid, just feature limited.
+  see also: https://github.com/rsyslog/rsyslog/issues/5599
+- 2025-05-29: omjournal: Fix priority value
+  Thanks to Bougrine Anis for the patch.
+- 2025-05-14: tls subsystem: generate better error message on accept failure
+  Right now, the remote peer is not reported, even in cases where
+  this would be possible. This patch provides a method to emit a
+  second message with remote peer information in cases where it
+  is possible. This is the case when the remote peer connects via
+  plain tcp but TLS cannot be negotiated, especially because the
+  connection breaks immediately. Most probably this behaviour can
+  be created by load balancer and other tools healt checks.
+  This patch improves debugging network issues. So it is useful.
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2504.0 (aka 2025.04) 2025-04-29
+- 2025-04-25: ossl tls driver: better error reporting
+  Replace some generic error codes with more specific counterparts.
+  There is still some more work to do, but this covers important
+  spots.
+- 2025-04-25: gnutls netstrm drvr fix: handle write retry correctly in recv call
+  When receiving, gnutls internally may need to write (e.g. for session key
+  changes), so we need to support that. This is a long-standing issue
+  that can have caused invalid error message and session closure.
+  The erorr message was:
+  GnuTLS receive error <nbr> has wrong read direction(wants write) -
+  this could be caused by a broken connection. GnuTLS reports: <text>
+- 2025-04-25: tcpsrv bugfix: do not busy wait on io events
+  Depending on circumstances, tcpsrv worker threads did effectively
+  busy-wait on io events to handle. Not always, but often. This was
+  caused be improperly re-arming the inotify subsystem.
+  This effected overall system performance, but not general rsyslog
+  stability. The bug was introduced on March 1st 2025 into the
+  daily stable build.
+  closes: https://github.com/rsyslog/rsyslog/issues/5623
+- 2025-04-23:  tcpsrv: add experimental stats
+  This is a stats for worker awaking via event notification. Could be useful
+  under some cirumstances. it's called "emptyReads".
+  It needs to be decided if this is a useful setting or not.
+- 2025-04-16: tcpsrv bugfix: input name was not properly propagated
+  As a result, it did not show up in pstats. Alos, we now use the input name
+  in worker thread to easily identify where they belong to. As thread names
+  have very limited length, the thread naming now is
+  "w<worker-number>/<input-name>".
+  Note: this bug was introduced 2025-03-01 (daily stable build)
+- 2025-03-06: rsyslog core fix: buffer overflow when the argument to replace() is empty
+  This fixes the following situation:
+  We have these expressions in rsyslogd.conf:
+      set $!rsyslog_FileFormat = exec_template("RSYSLOG_FileFormat")
+      set $!localheader = re_extract($!rsyslog_FileFormat, "[^ ]+.* +port[0-9]", 0, 0, "");
+      set $!localpattern = re_extract($!rsyslog_FileFormat, " [^ ]+ +[^ ]+ +port[0-9]", 0, 0, "");
+      set $!localheader = replace($!localheader, $!localpattern, " ");
+  We have a message like this arriving.
+      <30>Feb 24 22:08:21 hostname port03 'label' RXDATA: \n
+  It was observed that when 2 of these messages arrive in a row, rsyslogd
+  crashes. This is clearly due to memory corruption, as the crash comes
+  from within calloc.
+  Thanks to Lincoln Ramsay for the patch.
+- 2025-03-05: several small to cosmetic leak fixes based on Coverity Scan
+- 2025-03-04: perctile_stats: do not use uninitialized values on error
+  Thanks to Attila Lakatos for the patch.
+- 2025-03-04: omfwd bufgix: potential segfault in UDP forwarding
+  A segfault could occur if the configured port could not be bound to the interface.
+  Thanks to Markel Azpeitia Loiti for the patch.
+- 2025-03-01: imtcp: major multithreading and performance improvements
+  This commit significantly enhances imtcp by introducing a fully
+  functional worker thread pool, enabling true multi-threaded
+  processing for better scalability under high loads. This is
+  particularly beneficial when using TLS connections.
+
+  Notable changes:
+  - Implemented a complete worker pool for imtcp.
+  - Introduced the `workerthreads` config parameter for tuning
+    concurrency.
+  - Improved epoll efficiency by enabling edge-triggered mode.
+  - Added starvation handling via `starvationProtection.maxReads`.
+  - Refactored session accept logic and optimized network object
+    handling.
+  - Removed an obsolete network driver layer for event notification.
+  - Fixed multiple issues related to message timing, EPOLLERR
+    handling, and tests.
+  - Improved performance in poll() mode by reducing redundant
+    allocations.
+  - Introduced new CI tests for imtcp without epoll.
+  - Allowed disabling imtcp tests via a new configure switch.
+  - Added new impstats counters for worker thread pool statistics.
+
+  Details:
+  - The worker pool replaces an outdated experimental
+    implementation.
+  - If `workerthreads=1`, no worker pool is created to minimize
+    context switches.
+  - Moves worker pool variables inside `tcpsrv` instance to
+    prevent conflicts.
+  - Extracts session `accept()` logic into a dedicated function
+    for clarity.
+  - Fixes message ordering inconsistencies in multi-threaded
+    scenarios.
+  - Properly handles `EPOLLERR` notifications to improve error
+    resilience.
+  - Optimizes poll() mode by avoiding unnecessary reallocation
+    of file descriptors.
+  - Replaces the old network driver layer for event notification
+    with a streamlined solution.
+    - Now uses **conditional compilation** to select the best
+      method (epoll or poll) at build time.
+    - This significantly reduces code complexity, improves
+      maintainability, and boosts performance.
+  - The previous "thread pool" was a rough experiment that did
+    not perform significantly better than single-threaded mode.
+    - The **new implementation** allows multiple worker threads
+      on platforms with `epoll`.
+    - On non-epoll systems, an optimized **poll() based
+      single-threaded approach** is used, which is expected to
+      perform better than the old "thread pool."
+  - Adds `pthread_setname_np` only when available to improve
+    portability.
+  - Fixes test cases that assumed strict message timing, which
+    was unreliable.
+  - Reduces test parallelism for TSAN CI runs to prevent
+    resource exhaustion.
+  - Moves a test case to `imdiag` to ensure stable execution.
+  - Provides a new CI environment to verify `imtcp` behavior
+    without epoll.
+  - Introduces `--enable-imtcp-tests` configure switch for test
+    flexibility.
+  - Improves debug logging and adds better error handling for
+    worker pool startup.
+
+  New configuration parameters:
+  - `workerthreads`: Defines the number of worker threads for
+    imtcp. If set to 1, no worker pool is created.
+  - `starvationProtection.maxReads`: Defines the maximum number
+    of consecutive reads a worker can perform before being
+    interrupted to allow other sessions to be processed.
+
+  New impstats counters (emitted only when `workerthreads > 1`):
+  - `runs`: Number of times the worker thread has been invoked.
+  - `read`: Number of read calls performed by the worker.
+    For TLS, this includes read/write calls.
+  - `accept`: Number of `accept()` calls handled by the worker.
+  - `starvation_protect`: Number of times a socket was sent
+    back to the queue due to reaching the maximum number of
+    consecutive requests, ensuring fair scheduling of sessions.
+
+  These changes significantly enhance rsyslog’s TCP handling
+  performance and stability, particularly in high-volume
+  environments.
+
+  Closes #5529, #5532, #5578, #5580.
+- 2025-03-01: "fixed" clang static analyzer false positives
+- 2025-03-01: fixed clang static analyzer detected very unlikely but possible bugs
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2502.0 (aka 2025.02) 2025-02-18
+- 2025-02-16: gnutls bugfix: Avoid blocking sockets during TLS handshake
+  When forwarding logs to a TLS server, using a blocking socket
+  can lead to indefinite waiting during the gnutls_handshake()
+  call if the server does not respond as expected.
+  This commit modifies the behavior to use non-blocking sockets,
+  ensuring that the rsyslog client does not hang indefinitely
+  waiting for a response.
+  Thanks to Attila Lakatos for the patch.
+- 2025-02-13: CI: add compile check with atomic operations disabled
+  The platforms that do not have support for atomic operations become
+  more and more exoctic. Even more so, only Solaris builders now test
+  that inside the rsyslog CI. To "harden" the CI system against a
+  potential (temporary) unavailability of Solaris, we now also do
+  a build where we intentionally disable atomics. This will trigger
+  build issues on all platforms. This method also permits us to detect
+  problems quicker, as the solaris builders are slow.
+- 2025-02-13: omfwd bugfix: variable was not properly synced across threads
+  While this could lead to some inefficiency, it should not have caused
+  any real harm. But with data races it is never sure if more severe
+  issues occur. However, here only very strange use cases can be
+  envisioned where this might be the case.
+  In any case, the issue is now solved.
+  This also fixes some TSAN CI "flakes".
+- 2025-02-12: testbench: prevent flake by better sync of snmp test tool startup
+  In order to prevent flakes on some environments, we have enhanced the SNMP trap
+  receiver testing tool so that it indicates successful startup via a pid file, which
+  now can be used to hold rsyslog start until the test tool is fully up and running.
+- 2025-02-12: CI: add Testruns under Ubuntu 24.04
+  Note: we temporarily disable omamqp1 testing while we search for
+  the missing dependency.
+  We also add a special setting that permits us to control if
+  known-(very)-flaky test shall be run.
+  closes https://github.com/rsyslog/rsyslog/issues/5546
+- 2025-02-11: testbench: Add new version of snmptrapreceiver.py for python 3.11+
+  The system packages on Ubuntu 24 appear to be broken for python3-pysnmp4.
+  And when we update the package using
+          pip install pyasn1 pysnmp --break-system-packages --upgrade
+  We need adapt the code, so a new version snmptrapreceiverv2.py
+  has been added which will automatically been chosen if Python is >3.10
+  closes: https://github.com/rsyslog/rsyslog/issues/5554
+- 2025-02-10: ossl netstream driver: allow ephemeral Diffie-Hellman key exchange
+  Use well known DH parameters that have built-in support in OpenSSL.
+  From the man page: If "auto" DH parameters are switched on then
+  the parameters will be selected to be consistent with the size of
+  the key associated with the server's certificate.  If there is no
+  certificate (e.g. for PSK ciphersuites), then it it will be
+  consistent with the size of the negotiated symmetric cipher key.
+  Thanks to Attila Lakatos for the patch.
+- 2025-01-28: testbench: reduce flakiness for omhttp-batch-retry-metadata.sh test
+  The test results were not deterministic. Sometimes it passed, sometimes
+  it failed. The omhttp-validate-response.py script tried to parse the
+  json input line by line, but sometimes the message and response fields
+  are on separate lines, thus it failed to parse. This is the case
+  for both files used to control the checking.
+  This patch updates the check program so that it reads in complete
+  lines when parsing fails, thus removing this condition for flakiness.
+  HOWEVER, after doing so the test still sometimes fails. This may
+  point into a problem with the contributed omhttp module. Unfortunately,
+  I do not have enough insight into that module (nor time) to try to
+  address the root cause.
+  closes https://github.com/rsyslog/rsyslog/issues/5439
+- 2025-01-27: testbench fix: OpenSSL 3.x depreceated warnings in tcpflood
+- 2025-01-27: omfwd: align some parameters with imtcp names
+  Parameter names have historically evolved and are sometimes
+  inconsistent between modules (while still having the same
+  semantics and similiar name).
+  This commit creates three aliases in omfwd to keep stream
+  driver parameter names consistent with the names used in
+  imtcp. Note that we do not create an alias for
+  "streamdriverpermittedpeers" because the name differ more
+  considerably and we would also need to create an alias
+  in imtcp as well. We will do this only on request.
+  Note: aliases help, but are not a great solution. They may
+  cause confusion if both names are used together in a single
+  config. So care must be taken when using an alias.
+- 2025-01-27: testbench: remove ElasticSearch 6.0 based tests
+  EleasticSearch 6 is heavily outdated. Testing against that
+  platform is no longer needed.
+- 2025-01-27: omsnmp: replaced inet_aton with inet_pton for IPv4 address conversion
+  inet_pton is part of POSIX, whilst inet_aton is not. Moreover the
+  function is marked as forbidden according to rpmlint:
+  Forbidden function symbols found: inet_aton
+  Thanks to Attila Lakatos for the patch.
+- 2025-01-27: tcpflood test tool: enable multi threaded connection open
+  Connections were originally opened sequentially. This commit adds the
+  capability to open them via multiple threads in parallel.
+  This is needed at least for cases where we need to test multiple
+  pending connection requests, which can be accepted with an
+  "accept() loop".
+  It can also be useful for speeding up parts of the testbench.
+  However, the additional concurrency makes it potentially harder
+  to debug if bugs are detected. So tests may use multiple threads
+  for connect during regular operations but should also offer the
+  option (by editing) to revert to a single thread for easier
+  debugging.
+  closes https://github.com/rsyslog/rsyslog/issues/5535
+- 2025-01-23: imtcp: add "socketBacklog" parameter to configure TCP backlog size
+  A new "socketBacklog" parameter has been added to the imtcp module, allowing
+  users to override the default TCP SYN backlog size. Previously, the backlog
+  was set to roughly 10% of the configured max sessions, which remains the
+  default if the parameter is not specified. This enhancement enables better
+  configuration for high-performance servers. The parameter name aligns with
+  the "socketBacklog" parameter in imptcp for consistency.
+  The "socketBacklog" parameter should be set based on the anticipated connection
+  rate and the server's ability to handle incoming connections. For high-performance
+  environments with heavy traffic, a larger value may be needed to avoid dropped
+  connections during bursts. If unsure, leave the parameter unset to use the default
+    (10% of max sessions), which is suitable for typical workloads.
+- 2025-01-23: testbench: add new and adapt imtcp tests for large connection counts
+  Updated the imtcp test suite to set the "SocketBacklog" parameter to a higher
+  value to accommodate tests with a large number of concurrent connections.
+  This change addresses potential CI flakes caused by SYN queue overflows during
+  test runs and significantly reduces test runtime by avoiding delays during
+  session setup.
+  The adjusted SocketBacklog parameter ensures smoother handling of high
+  connection counts, improving test reliability and performance.
+- 2025-01-23: imptcp: Increase default SYN backlog for imptcp server to 64
+  Increased the default TCP SYN backlog for the imptcp server from 5 to 64 to
+  address potential connection instability and performance issues under high
+  connection load scenarios. The previous default of 5 was too low for many
+  workloads, particularly in scenarios involving a rapid influx of client
+  connections. This could lead to SYN queue overflow, delayed connection
+  establishment, and eventual RSTs or retransmissions during subsequent phases
+  of the connection lifecycle.
+  The new default of 64 provides better handling of typical workloads while
+  allowing further customization via the "SocketBacklog" configuration option.
+  Note: The "SocketBacklog" configuration option can be adjusted to handle
+  specific workloads such as high rates of concurrent connection openings, burst
+  traffic, or other resource-intensive scenarios.
+- 2025-01-23: testbench: adapt imptcp tests for large connection counts
+  Updated the imptcp test suite to set the "SocketBacklog" parameter to a higher
+  value to accommodate tests with a large number of concurrent connections.
+  This change addresses potential CI flakes caused by SYN queue overflows during
+  test runs and significantly reduces test runtime by avoiding delays during
+  session setup.
+  The adjusted SocketBacklog parameter ensures smoother handling of high
+  connection counts, improving test reliability and performance.
+- 2025-01-16: netstrm TLS driver: move TLS retry handling to main driver
+  This simplifies the driver interface. It is also kind of prep-work
+  for implementing real multi-threading support for imtcp (to be done
+  in a separate set of commits).
+  see also https://github.com/rsyslog/rsyslog/issues/5532
+- 2024-12-31: build: support for compile with -std=gnu23 gcc option
+  Note: The upcoming gnu23 C standard is overdoing it with type-safety. Inside
+  rsyslog, we historically have method tables for generic calls, which
+  keeps the code small and easy to understand. This would not decently be
+  possible with the new type-safety requirements.
+  So this commit works around these warning in a way that pretends to
+  provide more type safety. We have done this in the least intrusive
+  way to reduce the risk for regressions in code that works well in
+  since decades. Also note that the code already does parameter
+  validation.
+  There would have been more elaborate ways to make gnu23 compile happy,
+  e.g. by using a union of structs to provide the data element. Some folks
+  consider this type safe. In reality, it is not a bit better than
+  traditional C without types at all. Because the caller still needs to
+  ensure it picks the right struct from the union. As this approach
+  would also have larger regeression potential, we have not used it.
+  Right now, we have suppressed some of the new warnings, as working
+  around them would have required an even larger time budget and
+  potentially larger regression potential. In the long term we may
+  want to look into enabling them, as they would potentially be
+  beneficial for new code not involving method tables.
+  Some nits, however, were detected and have been fixed.
+- 2024-12-04: omazureeventhubs bugfix: URL escaping
+  Some characters were not properly escaped, leading to malfunction on submission.
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2412.0 (aka 2024.12) 2024-12-03
+- 2024-12-02: rainerscript bugfix: do not try to call a function if it does not exist
+  This could previously cause a segfault when the function was called.
+  Thanks to Attila Lakatos for the patch.
+- 2024-12-02: Fix legacy $ActionQueueDiscardMark parameter
+  If the $ActionQueueSize legacy parameter was configured
+  with a much value higher than the default, the queueDiscardMark
+  option was not automatically adjusted to represent 98% of
+  the actual queue size. This caused a misalignment issue,
+  which does not occur when using the RainerScript syntax.
+  Thanks to Attila Lakatos for the patch.
+  Note: We usually do NOT change legacy parameters, but in this case it makes
+  sense to adjust to recent developments.
+- 2024-11-25: improvements in CI system
+  added some support for Ubuntu 24.04 - stil more work to do
+- 2024-11-25: small nitfixes
+  mostly to address nits detected by newer compilers due to CI-system modernization
+- 2024-11-19: core bugfix: potential stability issue with corrupt queue file resolved
+  Thanks to Flos Lonicerae for the patch.
+- 2024-11-19: core bugfix: prevent segfault on use of $ControlCharacterEscapePrefix
+  When this obsolete legacy directive was used, rsyslog most probably segfaulted during
+  startup. This did not affect it's modern counterpart.
+  Thanks to Flos Lonicerae for the patch.
+- 2024-11-14: core bugfix: rsyslog could segfault if immediately stopped during startup
+  systemd restart rsyslog in the early start of OS will let rsyslog segmentation
+  fault. This cmd will send sigTerm to rsylogd, and rsyslogd will handle the
+  signal in rsyslogdDoDie. If the rsyslogd havn't parse the conf, the runConf
+  will be NULL So check the pointer before reference it.
+  see also: https://github.com/rsyslog/rsyslog/issues/5453
+  thanks to Wang Haitao for the patch.
+- 2024-11-14: imhiredis cleanup: fix incorrect variable definitions and missing prototype
+  Thanks to Théo Bertin for the patch.
+- 2024-11-14: config processing bugfix: typo and missing space when file can't be accessed
+  When using the backtick feature with cat and a file that does not exist,
+  an error message is placed where the file content would be. This error
+  message contained a typo in could as well as a missing space between
+  see and error, which have now been fixed.
+  Thanks to Tobias Kantusch for the patch.
+- 2024-11-14: build fix: resolved issue when building on musl
+  Thanks to Quincy Fleming for the patch.
+- 2024-11-14: testbench bugfix: typo caused invalid test file to be used
+  ... which went unnoticed during regular make check runs, but lead to
+  "left-over files after distclean" after make distcheck.
+  This could also potentially be responsible for some flakes that were
+  not fully explainable.
+- 2024-11-14: nsd_ptcp regression fix: remove debugging messages emited to stderr
+  fix regression introduced by 9ac56b286. This spits out a debug message
+  to stderr. That message is removed by this patch here.
+  closes https://github.com/rsyslog/rsyslog/issues/5485
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2410.0 (aka 2024.10) 2024-10-22
+- network subsystem: improve connection failure error message
+  If we try to connect via TCP and the connections fails, we now
+  tell inside the error message how long the connection attempt
+  took. This is useful to find out if targets connect very
+  slowly.
+- regression fix: build issue on Solaris 10
+  Solaris 10 does not support SO_REUSEPORT, which we need for some
+  tests. It is used in minitcpsrvr.c, and will now not be used if
+  not available.
+  Note that tests requiring that option will also need to be disabled
+  for that platform.
+  commit which introduced regression: 1c0f9bb
+- testbench: correctly apply socket options in minitcpsrvr
+  The option name in setsockopts is not a bitmask, so SO_REUSEADDR and
+  SO_REUSEPORT can't be ORed together. Instead apply the options via
+  separate calls.
+  Fixes: #5456
+  Thanks: Chris Hofstaedtler <zeha@debian.org> and Michael Biebl
+----------------------------------------------------------------------------------------
+Scheduled Release 8.2408.0 (aka 2024.08) 2024-08-20
+- 2024-08-16: omfwd: implement native load balancing - phase 1
+  This patch implements a simple round-robin load balancer
+  for omfwd. It provides equal distribution of load to a pool
+  of target servers.
+  The code currently has no different modes and no special tuning
+  for the load balancer. However, it works very well in the most
+  common use cases. Furthermore, it provides a solid base on which
+  more elaborate functionality can be build if there is need to.
+  The new functionality is fully backwards compatible with previous
+  configuration settings.
+  New action() config params:
+  * pool.resumeinterval
+  New/"changed" rstats counters
+  Each target receives its own set of pstats counters. Most
+  importantly this is the case for byte counts. That counter retains
+  the same naming, but there may now be multiple of these counters,
+  one for each target ip, port tuple.
+  New pstats message count to target
+  Among others, this can be used for checking that the load balancer
+  works as intended. The so-far byte count emitted does not provide
+  a clear indication of how many messages the targets had actually
+  processed.
+  For obvious reasons, this message count makes most sense in
+  advanced load balancing scenarios, but also provides additional
+  insight into round-robin. Non-matches indicate that targets
+  went offline, and we can now evaluate the impact this had
+  on processing.
+  - re-design rebind functionality
+  This now works at the transaction level. It causes a rebind of all
+  pool members. Previous code did not work 100% correct since for a
+  couple of years now (after output batching integration).
+  As cleanup, rebindInterval support has been removed from tcpClt,
+  because omfwd is the only user. This permits a cleaner code path.
+  We also noticed a bug with rebindInterval:  it caused some mild
+  message duplication for quite some time. This went unnoticed.
+  To address that efficiently, rebindInterval in the future will
+  be considered once per batch. That means up to (maxBatchSize - 1)
+  messages may be transmitted more than the rebindinterval is.
+  That's the cleanest mode of operation and should not make any
+  difference for real deployments.
+  Some additional work done in this commit:
+  - netstream: harden component against upper-layer logic errors
+  - network subsystem: better handle API errors and provide more info
+  - omfwd: add new parameter "iobuffer.maxsize"
+  - add new global parameter debug.abortoninternalerror and use it
+  - This parameter permits to make test runs fail when an internal error
+  - is detected and gracefully handled by rsyslog. While it is great to
+    have it gracefully handled in practice, we should not accept this
+    during testing. The new parameter permits to abort in this case and
+    emits the related error message beforehand. It is turned on by
+    default in our regular tests.
+  - add dedicated error code for "hard" program errors
+  - omfwd: some cleanup + error message fix + new debug level messages
+  - imptcp: improve error messages
+  - add omfwd option to NOT do extended connection check
+  - also output wrkr id in some omfwd messages (primarily debugging aid)
+  - better debug info via LogMsg() interface
+  - improve messages regarding imptcp and omfwd suspension / thread IDs
+  - refactor and enchance minitcpsrvr for mimicing died servers
+  - new global (debugging) option, correction of an informational msg
+  - add global option allmessagestostderr
+  - add new tests
+- 2024-08-16: omkafka enhance: write Kafka log with level ERROR or higher into errorfile
+  closes: https://github.com/rsyslog/rsyslog/issues/5425
+- 2024-08-16: net subsusytem bugfix: some config statemens were not accepted
+  The following parameters were not always excepted, even though they were documented
+  and the supporting code was also present. This has been corrected:
+  * streamdriver.cafile
+  * streamdriver.crlfile
+  * streamdriver.keyfile
+  * streamdriver.certfile
+  Thanks to Qiumiao Zhang for the fix.
+- 2024-08-13: new "ossl" crypto provider
+  Thanks to Attila Lakatos for the patch.
+- 2024-08-05: imtcp: improve connection error messages
+  They now contain remote peer information whereever possible.
+----------------------------------------------------------------------------------------
 Scheduled Release 8.2406.0 (aka 2024.06) 2024-07-02
 - 2024-07-01: ompgsql bugfix: unexpected and unnecessary message loss
   In case of PG not available lets retry instead of dropping messages
@@ -40,7 +1534,7 @@ Scheduled Release 8.2404.0 (aka 2024.04) 2024-04-02
     retried by omhttp plugin. The default behavior is to retry any non 2xx status code.
   * httpignorablecodes (list) that can specify HTTP status codes that should be ignored
     (as failures). status codes specified as ignorable code will not be retried.
-  * proxyhost, proxyport - configures a proxy, for which omhttp can use to set up a 
+  * proxyhost, proxyport - configures a proxy, for which omhttp can use to set up a
     HTTP proxy tunnel connection. Also works by reading environment variable if
     configured HTTP_PROXY. For more details see libcurl docs on CURLOPT_PROXY
     thanks to @erenwh for the contribution!
@@ -974,12 +2468,12 @@ Scheduled Release 8.2206.0 (aka 2022.06) 2022-06-14
   - support '}' characters in MMDB entry, when in a field
   Thanks to Théo Bertin for the patch.
 ----------------------------------------------------------------------------------------
-Scheduled Release 8.2204.1 (aka 2022.04) 2021-05-05
+Scheduled Release 8.2204.1 (aka 2022.04) 2022-05-05
 - security bugfix: potential buffer overrun in imptcp, imtcp, imgssapi and others
   This addresses CVE-2022-24903
   see also https://github.com/rsyslog/rsyslog/security/advisories/GHSA-ggw7-xr6h-mmr8
 ----------------------------------------------------------------------------------------
-Scheduled Release 8.2204.0 (aka 2022.04) 2021-04-19
+Scheduled Release 8.2204.0 (aka 2022.04) 2022-04-19
 - 2022-04-18: gnutls bugfix: possibility of infinite loop
   There was a rare possibility that the E_AGAIN/E_INTERRUPT handling
   could cause an infinite loop (100% CPU Usage), for example when a TLS
@@ -3008,8 +4502,8 @@ Version 8.1904.0 (aka 2019.04) 2019-04-16
   Thanks to Thomas D. (whissi) for the patch.
 ------------------------------------------------------------------------------
 Version 8.1903.0 (aka 2019.03) 2019-03-05
-- omrabbitmq: add features (RabbitMQ HA management, templatize routing_key, 
-  populate amqp message headers, delivery_mode and expiration parameters) 
+- omrabbitmq: add features (RabbitMQ HA management, templatize routing_key,
+  populate amqp message headers, delivery_mode and expiration parameters)
 - improg: create input module to use external program as input datas
 - imtuxedoulog: create input module to consume Tuxedo ULOG files
 - omhttp: rewritten with large feature enhancements
@@ -4421,7 +5915,7 @@ Version 8.35.0 [v8-stable] 2018-05-15
   Thanks to Richard Megginson for the patch set.
 - build system bugfix: --enable-atomic-operations did not work
   closes https://github.com/rsyslog/rsyslog/pull/2604
-- bugfix: rsyslog aborts on startup when specific config errors are made 
+- bugfix: rsyslog aborts on startup when specific config errors are made
   The following errors must be made in rsyslog.conf:
   * no action present
   * a call statement is used on an undefined ruleset
@@ -4842,7 +6336,7 @@ Version 8.32.0 [v8-stable] 2018-01-09
   hopefully useful at least for the testbench, possibly more.
 - fixed a couple of build issues with gcc-7 (in less frequently used modules)
 - fixed a couple of build issues on the arm platform (actually raspbian)
-- impstats: fix invalid counter definitions for getrusage() reporting 
+- impstats: fix invalid counter definitions for getrusage() reporting
   some of the counters were defined as  int (32 bit) vs. intctr_t (64 bit).
   On some platforms "long" seems to be 64bit, and getrusage() provides
   what we store as int via long. So this caused truncation and/or overflow.
@@ -6238,7 +7732,7 @@ Version 8.23.0 [v8-stable] 2016-11-15
   Thanks to github user bobthemighty for the patch
 - omtcl: new contributed module
   see also https://github.com/rsyslog/rsyslog/pull/1041
-  Please note: contributed modules are not directly supported by the 
+  Please note: contributed modules are not directly supported by the
   project. You might want to contact the author for questions.
   Thanks to Francisco Castro for contributing it.
 - RainerScript: provide a capability to set environment variables
@@ -6377,7 +7871,7 @@ Version 8.21.0 [v8-stable] 2016-08-23
   two:
   1) add in rsyslog.conf:
      global(processInternalMessages="on")
-  2) export the environment variable RSYSLOG_DFLT_LOG_INTERNAL=1 
+  2) export the environment variable RSYSLOG_DFLT_LOG_INTERNAL=1
      This will set a new default - the value can still be overwritten via
      rsyslog.conf (method 1). Note that the environment variable must be
      set in your **startup script**.
@@ -6550,7 +8044,7 @@ Version 8.18.0 [v8-stable] 2016-04-19
   * date-utc
 - redis: support for authentication
   Thanks to Manohar Ht for the patch
-- omkafka: makes kafka-producer on-HUP restart optional 
+- omkafka: makes kafka-producer on-HUP restart optional
   As of now, omkafka kills and re-creates kafka-producer on HUP. This
   is not always desirable. This change introduces an action param
   (reopenOnHup="on|off") which allows user to control re-cycling of
@@ -6618,7 +8112,7 @@ Version 8.18.0 [v8-stable] 2016-04-19
   Thanks to Tomas Heinrich for the patch.
 - bugfix: incorrect formatting of stats when CEE/Json format is used
   This lead to ill-formed json being generated
-- bugfix omfwd: new-style keepalive action parameters did not work 
+- bugfix omfwd: new-style keepalive action parameters did not work
   due to being inconsistently spelled inside the code. Note that legacy
   parameters $keepalive... always worked
   see also: https://github.com/rsyslog/rsyslog/issues/916
@@ -6630,7 +8124,7 @@ Version 8.18.0 [v8-stable] 2016-04-19
   because the tool is not often used.
 - bugfix omrelp: fix segfault if no port action parameter was given
   closes https://github.com/rsyslog/rsyslog/issues/911
-- bugfix imtcp: Messages not terminated by a NL were discarded 
+- bugfix imtcp: Messages not terminated by a NL were discarded
   ... upon connection termination.
   Thanks to Tomas Heinrich for the patch.
 ------------------------------------------------------------------------------
@@ -6727,7 +8221,7 @@ Version 8.17.0 [v8-stable] 2016-03-08
 - bugfix tcpflood: did not handle connection drops correct in TLS case
   note that tcpflood is a testbench too. The bug caused some testbench
   instability, but had no effect on deployments.
-- bugfix: abort if global parameter value was wrong 
+- bugfix: abort if global parameter value was wrong
   If so, the abort happened during startup. Once started,
   all was stable.
 - bugfix omkafka: fix potential NULL pointer addressing
@@ -6767,7 +8261,7 @@ Version 8.17.0 [v8-stable] 2016-03-08
 - bugfix imfile: abort on startup if no slash was present in file name param
   Thanks to Brian Knox for the patch.
 - bugfix rsgtutil: fixed abort when using short command line options
-  Thanks to Henri Lakk 
+  Thanks to Henri Lakk
 - bugfix rsgtutil: invalid computation of log record extraction file
   This caused verification to fail because the hash chain was actually
   incorrect. Depended on the input data set.
@@ -6775,9 +8269,9 @@ Version 8.17.0 [v8-stable] 2016-03-08
 - bugfix build system: KSI components could only be build if in default path
 ------------------------------------------------------------------------------
 Version 8.16.0 [v8-stable] 2016-01-26
-- rsgtutil: Added extraction support including loglines and hash chains. 
+- rsgtutil: Added extraction support including loglines and hash chains.
   More details on how to extract loglines can be found in the rsgtutil
-  manpage. See also: https://github.com/rsyslog/rsyslog/issues/561   
+  manpage. See also: https://github.com/rsyslog/rsyslog/issues/561
 - clean up doAction output module interface
   We started with char * pointers, but used different types of pointers
   over time. This lead to alignment warnings. In practice, I think this
@@ -6840,23 +8334,23 @@ Version 8.16.0 [v8-stable] 2016-01-26
 - some code improvement and cleanup
 ------------------------------------------------------------------------------
 Version 8.15.0 [v8-stable] 2015-12-15
-- KSI Lib: Updated code to run with libksi 3.4.0.5 
+- KSI Lib: Updated code to run with libksi 3.4.0.5
   Also libksi 3.4.0.x is required to build rsyslog if ksi support
-  is enabled. New libpackages have been build as well. 
+  is enabled. New libpackages have been build as well.
 - KSI utilities: Added option to ser publication url.
-  Since libksi 3.4.0.x, there is no default publication url anymore. 
+  Since libksi 3.4.0.x, there is no default publication url anymore.
   The publication url has to be set using the --publications-server
   Parameter, otherwise the ksi signature cannot be verified. UserID
-  and UserKey can also be set by parameter now.   
+  and UserKey can also be set by parameter now.
   Closes https://github.com/rsyslog/rsyslog/issues/581
-- KSI Lib: Fixed wrong TLV container for KSI signatures from 0905 to 0906. 
+- KSI Lib: Fixed wrong TLV container for KSI signatures from 0905 to 0906.
   closes https://github.com/rsyslog/rsyslog/issues/587
-- KSI/GT Lib: Fixed multiple issues found using static analyzer 
+- KSI/GT Lib: Fixed multiple issues found using static analyzer
 - performance improvement for configs with heavy use of JSON variables
   Depending on the config, this can be a very big gain in performance.
-- added pmpanngfw: contributed module for translating Palo Alto Networks logs. 
+- added pmpanngfw: contributed module for translating Palo Alto Networks logs.
   see also: https://github.com/rsyslog/rsyslog/pull/573
-  Thanks to Luigi Mori for the contribution. 
+  Thanks to Luigi Mori for the contribution.
 - testbench: Changed valgrind option for imtcp-tls-basic-vg.sh
   For details see: https://github.com/rsyslog/rsyslog/pull/569
 - pmciscoios: support for asterisk before timestamp added
@@ -6996,7 +8490,7 @@ Version 8.13.0 [v8-stable] 2015-09-22
 - bugfix testbench: some tests using imptcp are run if module is disabled
   Thanks to Michael Biebl for reporting this
   see also https://github.com/rsyslog/rsyslog/issues/524
-- bugfix omkafka: Fixes a bug not accepting new messages anymore. 
+- bugfix omkafka: Fixes a bug not accepting new messages anymore.
   see also: https://github.com/rsyslog/rsyslog/pull/472
   Thanks to Janmejay Singh
 - bugfix: Parallel build issue "cannot find ../runtime/.libs/librsyslog.a:
@@ -7006,8 +8500,8 @@ Version 8.13.0 [v8-stable] 2015-09-22
   see also: https://github.com/rsyslog/rsyslog/issues/484
 - bugfix: Reverted FIX for issue #392 as it had unexpected side effects.
   The new fix duplicates the Listener object for static files (like
-  done for dynamic files already), resolving issue #392 and #490. 
-  see also https://github.com/rsyslog/rsyslog/pull/490 
+  done for dynamic files already), resolving issue #392 and #490.
+  see also https://github.com/rsyslog/rsyslog/pull/490
 - bugfix: issues in queue subsystem if syncqueuefiles was enabled
   * Error 14 was generated on the .qi file directory handle.
     As the .qi filestream does not have a directory set, fsync
@@ -7057,7 +8551,7 @@ Version 8.12.0 [v8-stable] 2015-08-11
   Thanks to Tomas Heinrich for the patch.
 - imfile: files moved outside of directory are now (properly) handled
 - bugfix: imfile: segfault when using startmsg.regex if first log line
-  doesn't match 
+  doesn't match
   Thanks to Ciprian Hacman for the patch.
 - bugfix imfile: file table was corrupted when on file deletion
   This could happen when a file that was statically configured (not via an
@@ -7071,13 +8565,13 @@ Version 8.12.0 [v8-stable] 2015-08-11
   Thanks to Anton Matveenko for the patch
 - testbench: remove raciness from UDP based tests
 - testbench: added bash into all scripts making it mandatory
-- bugfix testbench: Fixed problem building syslog_caller util when 
-  liblogging-stdlog is not available. 
+- bugfix testbench: Fixed problem building syslog_caller util when
+  liblogging-stdlog is not available.
   Thanks to Louis Bouchard for the patch
 - bugfix rscryutil.1: Added fix checking for generate_man_pages condition
   Thanks to Radovan Sroka for the patch
 - bugfix freebsd console: \n (NL) is prepended with \r (CR) in console
-  output on freebsd only. For more details see here: 
+  output on freebsd only. For more details see here:
   https://github.com/rsyslog/rsyslog/issues/372
   Thanks to AlexandreFenyo for the patch
 ------------------------------------------------------------------------------
@@ -7348,7 +8842,7 @@ Version 8.5.0 [v8-stable] 2014-10-24
   where a system startup script hang due to "hanging" rsyslogd.
 - make gntls tcp syslog driver emit more error messages
   Messages previously emitted only to the debug log are now emitted as
-  syslog error messages. It has shown that they contain information 
+  syslog error messages. It has shown that they contain information
   helpful to the user for troubleshooting config issues. Note that this
   change is a bit experimental, as we are not sure if there are situations
   where large amounts of error messages may be emitted.
@@ -7369,7 +8863,7 @@ Version 8.4.3 [v8-stable] 2014-10-??
   * To: header was duplicated once per recipient (this is permitted,
     but an address list is a better choice nowadays)
   Thanks to github user cacheus for the patches.
-- bugfix imkmsg: infinite loop on OpenVZ VMs 
+- bugfix imkmsg: infinite loop on OpenVZ VMs
   Thanks to github user PaulSD for the patch
   closes https://github.com/rsyslog/rsyslog/pull/138
 - bugfix: typo in queue configuration parameter made parameter unusable
@@ -7516,7 +9010,7 @@ Version 8.3.2 [v8-devel] 2014-05-02
   - tzoffsmin
   - tzoffsdirection
   - wdayname
-  For string templates, these are property options and they are 
+  For string templates, these are property options and they are
   prefixed with "date-" (e.g. "date-year", "date-month", ...)
   see also: https://github.com/rsyslog/rsyslog/issues/65
 - bugfix: mmexternal remove framing char before processing JSON reply
@@ -7547,7 +9041,7 @@ Version 8.3.1 [v8-devel] 2014-04-24
   is gotten, it is generated when not already present. As we used the
   regular setter, this means that always the uuid was generated, which is
   quite time-consuming. This has now been changed so that it only is
-  generated if it already exists. That also matches more closely the 
+  generated if it already exists. That also matches more closely the
   semantics, as "jsonmesg" should not make modifications to the message.
   Note that the same applies to "fulljson" passing mode for external
   plugins.
@@ -7640,7 +9134,7 @@ This starts a new stable branch based on 8.1.6 plus the following changes:
 - add support for specifying the liblogging-stdlog channel spec
   new global parameter "stdlog.channelspec"
 - add "defaultnetstreamdrivercertfile" global variable to set a default
-  for the certfile. 
+  for the certfile.
   Thanks to Radu Gheorghe for the patch.
 - omelasticsearch: add new "usehttps" parameter for secured connections
   Thanks to Radu Gheorghe for the patch.
@@ -7651,7 +9145,7 @@ This starts a new stable branch based on 8.1.6 plus the following changes:
   stable version.
 - add capability to override GnuTLS path in build process
   Thanks to Clayton Shotwell for the patch
-- better and more consistent action naming, action queues now always 
+- better and more consistent action naming, action queues now always
   contain the word "queue" after the action name
 - bugfix: ompipe did resume itself even when it was still in error
   See: https://github.com/rsyslog/rsyslog/issues/35
@@ -7692,7 +9186,7 @@ Version 8.1.6 [release candidate] 2014-02-20
   to all sorts of problems.
   See also: https://github.com/rsyslog/rsyslog/issues/27
   Thanks to Alain for the analysis and the patch.
-- ompgsql bugfix: improper handling of auto-backgrounding mode 
+- ompgsql bugfix: improper handling of auto-backgrounding mode
   If rsyslog was set to auto-background itself (default code behavior, but
   many distros now turn it off for good reason), ompgsql could not
   properly connect. This could even lead to a segfault. The core reason
@@ -7766,7 +9260,7 @@ highly experimental. This assertion is based on real-world feedback.
   * used variable qualifiers (const, __restrict__) to hopefully help
     the compiler generate somewhat faster code
 - failed action detection more precisely for a number of actions
-  If an action  uses string parameter passing but is non-transactional 
+  If an action  uses string parameter passing but is non-transactional
   it can be executed immediately, giving a quicker indication of
   action failure.
 - bugfix: limiting queue disk space did not work properly
@@ -7808,7 +9302,7 @@ Version 8.1.1 [experimental] 2013-11-19
   Thanks to Pavel Levshin for the patch
 - mmaudit: now supports v8 output module interface and work again
 - bugfix: potential abort on startup in debug mode
-  This depends on template type being used. The root cause was a 
+  This depends on template type being used. The root cause was a
   non-necessary debug output, which were at the wrong spot (leftover from
   initial testing).
   Thanks to Pavel Levshin for alerting us and providing a patch
@@ -7859,7 +9353,7 @@ Version 7.6.8 [v7.6-stable] 2014-10-??
   * The verification function in rsgtutil tool did not report deletion of
     whole signed blocks of lines from the end of the log file.
   * The verification function in rsgtutil tool did not report extra
-    (unsigned) lines at the end of the log file. 
+    (unsigned) lines at the end of the log file.
   Thanks to Henri Lakk for the patch.
 - bugfix: error: json_tokener_errors undeclared when overriding PKGCONFIG
   If PKGCONFIG settings for json-c were overridden, presence of
@@ -8016,7 +9510,7 @@ Version 7.6.1 [v7.6-stable] 2014-03-13
   the config details (like destination etc) as this would require much more
   elaborate code changes, which we at least do not like to do in the
   stable version.
-- better and more consistent action naming, action queues now always 
+- better and more consistent action naming, action queues now always
   contain the word "queue" after the action name
 - add support for "tls-less" librelp
   we now require librelp 1.2.3, as we need the new error code definition
@@ -8056,7 +9550,7 @@ This starts a new stable branch based on 7.5.8 plus the following changes:
   to all sorts of problems.
   See also: https://github.com/rsyslog/rsyslog/issues/27
   Thanks to Alain for the analysis and the patch.
-- ompgsql bugfix: improper handling of auto-backgrounding mode 
+- ompgsql bugfix: improper handling of auto-backgrounding mode
   If rsyslog was set to auto-background itself (default code behavior, but
   many distros now turn it off for good reason), ompgsql could not
   properly connect. This could even lead to a segfault. The core reason
@@ -8176,7 +9670,7 @@ Version 7.5.5 [devel] 2013-10-16
 - bugfix: mmutf8fix did not properly handle invalid UTF-8 at END of message
   if the very last character sequence was too long, this was not detected
   Thanks to Risto Vaarandi for reporting this problem.
-- mmanon: removed the check for specific "terminator characters" after 
+- mmanon: removed the check for specific "terminator characters" after
   last octet. As it turned out, this didn't work in practice as there
   was an enormous set of potential terminator chars -- so removing
   them was the best thing to do. Note that this may change behavior of
@@ -8221,7 +9715,7 @@ Version 7.5.4 [devel] 2013-10-07
   At the same time, (very) slightly remove memory footprint when
   few listeners are monitored.
 - bugfix: omfwd parameter streamdrivermode was not properly handled
-  it was always overwritten by whatever value was set via the 
+  it was always overwritten by whatever value was set via the
   legacy directive $ActionSendStreamDriverMode
 - imtcp: add streamdriver.name module parameter
   permits overriding the system default stream driver (gtls, ptcp)
@@ -8275,7 +9769,7 @@ Version 7.5.2 [devel] 2013-07-04
   closes: http://bugzilla.adiscon.com/show_bug.cgi?id=461
   a security advisory for this bug is available at:
      http://www.lsexperts.de/advisories/lse-2013-07-03.txt
-  CVE: CVE-2013-4758 
+  CVE: CVE-2013-4758
   PLEASE NOTE: This issue only existed if omelasticsearch was used
   in a non-default configuration, where the "errorfile" parameter
   was specified. Without that parameter set, the bug could not
@@ -8307,7 +9801,7 @@ Version 7.5.1 [devel] 2013-06-26
 - added BSD-specific syslog facilities
   * "console"
   * "bsd_security" - this is called "security" under BSD, but that name
-    was unfortunately already taken by some standard facility. So I 
+    was unfortunately already taken by some standard facility. So I
     did the (hopefully) second-best thing and renamed it a little.
 - imported fixes from 7.4.2 (especially build problems on FreeBSD)
 - bugfix: imptcp did not properly initialize compression status variable
@@ -8334,7 +9828,7 @@ Version 7.4.10  [v7.4-stable] 2014-02-12
   to all sorts of problems.
   See also: https://github.com/rsyslog/rsyslog/issues/27
   Thanks to Alain for the analysis and the patch.
-- ompgsql bugfix: improper handling of auto-backgrounding mode 
+- ompgsql bugfix: improper handling of auto-backgrounding mode
   If rsyslog was set to auto-background itself (default code behavior, but
   many distros now turn it off for good reason), ompgsql could not
   properly connect. This could even lead to a segfault. The core reason
@@ -8423,7 +9917,7 @@ Version 7.4.6  [v7.4-stable] 2013-10-31
   Thanks to Pavel Levshin for the fix
 ---------------------------------------------------------------------------
 Version 7.4.5  [v7.4-stable] 2013-10-22
-- mmanon: removed the check for specific "terminator characters" after 
+- mmanon: removed the check for specific "terminator characters" after
   last octet. As it turned out, this didn't work in practice as there
   was an enormous set of potential terminator chars -- so removing
   them was the best thing to do. Note that this may change behavior of
@@ -8552,7 +10046,7 @@ Version 7.4.2  [v7.4-stable] 2013-07-04
   closes: http://bugzilla.adiscon.com/show_bug.cgi?id=461
   a security advisory for this bug is available at:
      http://www.lsexperts.de/advisories/lse-2013-07-03.txt
-  CVE: CVE-2013-4758 
+  CVE: CVE-2013-4758
   PLEASE NOTE: This issue only existed if omelasticsearch was used
   in a non-default configuration, where the "errorfile" parameter
   was specified. Without that parameter set, the bug could not
@@ -8612,7 +10106,7 @@ This starts a new stable branch based on 7.3.15 plus the following changes:
   If multiple spaces were used in front of the template name, all but one
   of them became actually part of the template name. So
   $template   a,"..." would be name "  a", and as such "a" was not
-  available, e.g. in 
+  available, e.g. in
   *.* /var/log/file;a
   This is a legacy config problem. As it was unreported for many years,
   no backport of the fix to old versions will happen.
@@ -8708,7 +10202,7 @@ Version 7.3.10  [devel] 2013-04-10
 - bugfix: failover/action suspend did not work correctly
   This was experienced if the retry action took more than one second
   to complete. For suspending, a cached timestamp was used, and if the
-  retry took longer, that timestamp was already in the past. As a 
+  retry took longer, that timestamp was already in the past. As a
   result, the action never was kept in suspended state, and as such
   no failover happened. The suspend functionality now does no longer use
   the cached timestamp (should not have any performance implication, as
@@ -8841,10 +10335,10 @@ Version 7.3.5  [devel] 2012-12-19
   the msg locking code - we no longer do unlocked operations, as the use
   case for it has mostly gone away. It is potentially possible only at
   very low-end systems, and there the small additional overhead of doing
-  the locking does not really hurt. Instead, the removal of that 
+  the locking does not really hurt. Instead, the removal of that
   capability can actually slightly improve performance in common cases,
   as the code path is smaller and requires slightly less memory writes.
-  That probably outperforms the extra locking overhead (which in the 
+  That probably outperforms the extra locking overhead (which in the
   low-end case always happens in user space, without need for kernel
   support as we can always directly acquire the lock - there is no
   contention at all).
@@ -8864,7 +10358,7 @@ Version 7.3.4  [devel] 2012-11-23
   on startup
 - bugfix: no error msg on invalid field option in legacy/string template
 - bugfix: imklog mistakenly took kernel timestamp subseconds as nanoseconds
-  ... actually, they are microseconds. So the fractional part of the 
+  ... actually, they are microseconds. So the fractional part of the
   timestamp was not properly formatted. (import from 5.10.2)
   Thanks to Marius Tomaschewski for the bug report and the patch idea.
 ---------------------------------------------------------------------------
@@ -8874,7 +10368,7 @@ Version 7.3.3  [devel] 2012-11-07
   This could happen if a dynafile was destructed before the first write.
   In practice, this could happen if few lines were written to a file and
   it then became evicted from the dynafile cache. This would probably
-  look very random, because it depended on the timing in regard to 
+  look very random, because it depended on the timing in regard to
   message volume and dynafile cache size.
 ---------------------------------------------------------------------------
 Version 7.3.2  [devel] 2012-10-30
@@ -8883,10 +10377,10 @@ Version 7.3.2  [devel] 2012-10-30
 ---------------------------------------------------------------------------
 Version 7.3.2  [devel] 2012-10-30
 - totally reworked ratelimiting and "last message repeated n times"
-  all over rsyslog code. Each of the supported inputs now supports 
+  all over rsyslog code. Each of the supported inputs now supports
   linux-like ratelimiting (formerly only imuxsock did). Also, the
   "last message repeated n times" is now processed at the input side
-  and no longer at the output side of rsyslog processing. This 
+  and no longer at the output side of rsyslog processing. This
   provides the basis for new future additions as well as usually more
   performance and a much simpler output part (which can be even further
   refactored).
@@ -8953,7 +10447,7 @@ Version 7.2.7  [v7-stable] 2013-04-17
 - bugfix: failover/action suspend did not work correctly
   This was experienced if the retry action took more than one second
   to complete. For suspending, a cached timestamp was used, and if the
-  retry took longer, that timestamp was already in the past. As a 
+  retry took longer, that timestamp was already in the past. As a
   result, the action never was kept in suspended state, and as such
   no failover happened. The suspend functionality now does no longer use
   the cached timestamp (should not have any performance implication, as
@@ -8985,7 +10479,7 @@ Version 7.2.7  [v7-stable] 2013-04-17
   To use that functionality, legacy rsyslog.conf syntax had to be used.
   Also, the doc was missing information on the "ParseTrusted" set of
   config directives.
-- bugfix: parameter action.execOnlyWhenPreviousIsSuspended was accidentally 
+- bugfix: parameter action.execOnlyWhenPreviousIsSuspended was accidentally
   of integer-type. For obvious reasons, it needs to be boolean. Note
   that this change can break existing configurations if they circumvented
   the problem by using 0/1 values.
@@ -9013,7 +10507,7 @@ Version 7.2.6  [v7-stable] 2013-03-05
   quote characters to follow in the action part - unfortunately something
   that can frequently happen with v6+ format. An example:
   :programname, isequal, "as" {action(type="omfile" ...) }
-  Here, the part 
+  Here, the part
   :programname, isequal, "as" {action(type="omfile"
   was treated as the property filter, and the rest as action part.
   Obviously, this did not work out. Unfortunately, such situations usually
@@ -9061,7 +10555,7 @@ Version 7.2.4  [v7-stable] 2012-12-07
 - imklog: added KeepKernelTimestamp parameter (import from 5.10.2)
   Thanks to Marius Tomaschewski for the patch.
 - bugfix: imklog mistakenly took kernel timestamp subseconds as nanoseconds
-  ... actually, they are microseconds. So the fractional part of the 
+  ... actually, they are microseconds. So the fractional part of the
   timestamp was not properly formatted. (import from 5.10.2)
   Thanks to Marius Tomaschewski for the bug report and the patch idea.
 - bugfix: supportoctetcountedframing parameter did not work in imptcp
@@ -9079,10 +10573,10 @@ Version 7.2.4  [v7-stable] 2012-12-07
   the msg locking code - we no longer do unlocked operations, as the use
   case for it has mostly gone away. It is potentially possible only at
   very low-end systems, and there the small additional overhead of doing
-  the locking does not really hurt. Instead, the removal of that 
+  the locking does not really hurt. Instead, the removal of that
   capability can actually slightly improve performance in common cases,
   as the code path is smaller and requires slightly less memory writes.
-  That probably outperforms the extra locking overhead (which in the 
+  That probably outperforms the extra locking overhead (which in the
   low-end case always happens in user space, without need for kernel
   support as we can always directly acquire the lock - there is no
   contention at all).
@@ -9143,7 +10637,7 @@ Version 7.2.2  [v7-stable] 2012-10-16
   closes: http://bugzilla.adiscon.com/show_bug.cgi?id=381
 - bugfix: imfile discarded some file parts
   File lines that were incomplete (LF missing) *at the time imfile polled
-  the file* were partially discarded. That part of the line that was read 
+  the file* were partially discarded. That part of the line that was read
   without the LF was discarded, and the rest of the line was submitted in
   the next polling cycle. This is now changed so that the partial content
   is saved until the complete line is read. Note that the patch affects
@@ -9275,7 +10769,7 @@ Version 7.1.2  [devel] 2012-09-12
 - bugfix: messages were duplicated, sometimes massively
   regression from new code in 7.1.1 and reason for early release
 - bugfix: remove invalid socket option call from imuxsock
-  Thanks to Cristian Ionescu-Idbohrn and Jonny Törnbom 
+  Thanks to Cristian Ionescu-Idbohrn and Jonny Törnbom
 - bugfix: abort when invalid property name was configured
   in property-based filter
 - bugfix: multiple rulesets did no longer work correctly (7.1.1 regression)
@@ -9329,7 +10823,7 @@ Version 6.6.1  [v6-stable] 2012-10-??
   each message, even it is used for the message time too.
   Thanks to Marius Tomaschewski for the patch.
 - bugfix: imklog mistakenly took kernel timestamp subseconds as nanoseconds
-  ... actually, they are microseconds. So the fractional part of the 
+  ... actually, they are microseconds. So the fractional part of the
   timestamp was not properly formatted.
   Thanks to Marius Tomaschewski for the bug report and the patch idea.
 - bugfix: hostname set in rsyslog.conf was not picked up until HUP
@@ -9343,10 +10837,10 @@ Version 6.6.1  [v6-stable] 2012-10-??
   the msg locking code - we no longer do unlocked operations, as the use
   case for it has mostly gone away. It is potentially possible only at
   very low-end systems, and there the small additional overhead of doing
-  the locking does not really hurt. Instead, the removal of that 
+  the locking does not really hurt. Instead, the removal of that
   capability can actually slightly improve performance in common cases,
   as the code path is smaller and requires slightly less memory writes.
-  That probably outperforms the extra locking overhead (which in the 
+  That probably outperforms the extra locking overhead (which in the
   low-end case always happens in user space, without need for kernel
   support as we can always directly acquire the lock - there is no
   contention at all).
@@ -9366,7 +10860,7 @@ Version 6.5.1  [beta] 2012-10-11
 - ommongodb now supports templates
 - bugfix: imtcp could abort on exit due to invalid free()
 - bugfix: remove invalid socket option call from imuxsock
-  Thanks to Cristian Ionescu-Idbohrn and Jonny Törnbom 
+  Thanks to Cristian Ionescu-Idbohrn and Jonny Törnbom
 - added pure JSON output plugin parameter passing mode
 - ommongodb now supports templates
 - bugfix: imtcp could abort on exit due to invalid free()
@@ -9387,7 +10881,7 @@ Version 6.5.0  [devel] 2012-08-28
   (but now requires at least librelp 1.0.1)
 - implemented freeCnf() module interface
   This was actually not present in older versions, even though some modules
-  already used it. The implementation was now done, and not in 6.3/6.4 
+  already used it. The implementation was now done, and not in 6.3/6.4
   because the resulting memory leak was ultra-slim and the new interface
   handling has some potential to seriously break things. Not the kind of
   thing you want to add in late beta state, if avoidable.
@@ -9430,7 +10924,7 @@ all these patches here are present in 6.6.0.
   Thanks to Milan Bartos for alerting us and a patch!
 - bugfix: some valid legacy PRI filters were flagged as erroneous
   closes: http://bugzilla.adiscon.com/show_bug.cgi?id=358
-  This happened to filters of the style "local0,local1.*", where the 
+  This happened to filters of the style "local0,local1.*", where the
   multiple facilities were comma-separated.
 - bugfix: imuxsock did not properly honor $LocalHostIPIF
 ---------------------------------------------------------------------------
@@ -9438,7 +10932,7 @@ Version 6.4.2  [V6-STABLE] 2012-09-20
 - bugfix: potential abort, if action queue could not be properly started
   This most importantly could happen due to configuration errors.
 - bugfix: remove invalid socket option call from imuxsock
-  Thanks to Cristian Ionescu-Idbohrn and Jonny Törnbom 
+  Thanks to Cristian Ionescu-Idbohrn and Jonny Törnbom
 - bugfix: missing support for escape sequences in RainerScript
   only \' was supported. Now the usual set is supported. Note that v5
   used \x as escape where x was any character (e.g. "\n" meant "n" and NOT
@@ -9452,7 +10946,7 @@ Version 6.4.1  [V6-STABLE] 2012-09-06
   error, it is a bug that this important and hard to find config error
   was not detected by rsyslog.
 - bugfix: "jsonf" property replacer option did generate invalid JSON
-  in JSON, we have "fieldname":"value", but the option emitted 
+  in JSON, we have "fieldname":"value", but the option emitted
   "fieldname"="value". Interestingly, this was accepted by a couple
   of sinks, most importantly elasticsearch. Now the correct format is
   emitted, which causes a remote chance that some things that relied on
@@ -9472,7 +10966,7 @@ Version 6.4.1  [V6-STABLE] 2012-09-06
   occurs with legacy config action syntax. This was a regression
   caused by an incorrect merge in to the 6.3.x codebase.
   Thanks to Stefano Mason for alerting us of this bug.
-- bugfix: Fixed TCP CheckConnection handling in omfwd.c. Interface needed 
+- bugfix: Fixed TCP CheckConnection handling in omfwd.c. Interface needed
   to be changed in lower stream classes. Syslog TCP Sending is now resumed
   properly. Unfixed, that lead to non-detection of downstate of remote
   hosts.
@@ -9480,7 +10974,7 @@ Version 6.4.1  [V6-STABLE] 2012-09-06
 Version 6.4.0  [V6-STABLE] 2012-08-20
 - THIS IS THE FIRST VERSION OF THE 6.4.x STABLE BRANCH
   It includes all enhancements made in 6.3.x plus what is written in the
-  ChangeLog below. 
+  ChangeLog below.
 - omelasticsearch: support for parameters parent & dynparent added
 - bugfix: imtcp aborted when more than 2 connections were used.
   Incremented pthread stack size to 4MB for imtcp, imptcp and imttcp
@@ -9512,17 +11006,17 @@ Version 6.3.11  [BETA] 2012-06-18
 Version 6.3.10  [BETA] 2012-06-04
 - bugfix: delayable source could block action queue, even if there was
   a disk queue associated with it. The root cause of this problem was
-  that it makes no sense to delay messages once they arrive in the 
+  that it makes no sense to delay messages once they arrive in the
   action queue - the "input" that is being held in that case is the main
   queue worker, what makes no sense.
-  Thanks to Marcin for alerting us on this problem and providing 
+  Thanks to Marcin for alerting us on this problem and providing
   instructions to reproduce it.
 - bugfix: invalid free in imptcp could lead to abort during startup
 - bugfix: if debug message could end up in log file when forking
   if rsyslog was set to auto-background (thus fork, the default) and debug
   mode to stdout was enabled, debug messages ended up in the first log file
   opened. Currently, stdout logging is completely disabled in forking mode
-  (but writing to the debug log file is still possible). This is a change 
+  (but writing to the debug log file is still possible). This is a change
   in behavior, which is under review. If it causes problems to you,
   please let us know.
   Thanks to Tomas Heinrich for the patch.
@@ -9565,7 +11059,7 @@ Version 6.3.9  [BETA] 2012-05-22
 - added capability to specify substrings for field extraction mode
 - bugfix: disk queue was not persisted on shutdown, regression of fix to
   http://bugzilla.adiscon.com/show_bug.cgi?id=299
-  The new code also handles the case of shutdown of blocking light and 
+  The new code also handles the case of shutdown of blocking light and
   full delayable sources somewhat smarter and permits, assuming sufficient
   timeouts, to persist message up to the max queue capacity. Also some nits
   in debug instrumentation have been fixed.
@@ -9603,8 +11097,8 @@ Version 6.3.8  [DEVEL] 2012-04-16
 - bugfix: imklog invalidly computed facility and severity
   closes: http://bugzilla.adiscon.com/show_bug.cgi?id=313
 - added configuration directive to disable octet-counted framing
-  for imtcp, directive is $InputTCPServerSupportOctetCountedFraming 
-  for imptcp, directive is $InputPTCPServerSupportOctetCountedFraming 
+  for imtcp, directive is $InputTCPServerSupportOctetCountedFraming
+  for imptcp, directive is $InputPTCPServerSupportOctetCountedFraming
 - added capability to use a local interface IP address as fromhost-ip for
   locally originating messages. New directive $LocalHostIPIF
 ---------------------------------------------------------------------------
@@ -9702,7 +11196,7 @@ Version 6.2.2  [v6-stable], 2012-06-13
   Thanks to Abby Edwards for providing these enhancements
 - bugfix: disk queue was not persisted on shutdown, regression of fix to
   http://bugzilla.adiscon.com/show_bug.cgi?id=299
-  The new code also handles the case of shutdown of blocking light and 
+  The new code also handles the case of shutdown of blocking light and
   full delayable sources somewhat smarter and permits, assuming sufficient
   timeouts, to persist message up to the max queue capacity. Also some nits
   in debug instrumentation have been fixed.
@@ -9788,8 +11282,8 @@ Version 6.1.12  [BETA], 2011-09-01
   Found by Ismail Dönmez at suse
 - bugfix: The NUL-Byte for the syslogtag was not copied in MsgDup (msg.c)
 - bugfix: fixed incorrect state handling for Discard Action (transactions)
-  Note: This caused all messages in a batch to be set to COMMITTED, 
-  even if they were discarded. 
+  Note: This caused all messages in a batch to be set to COMMITTED,
+  even if they were discarded.
 ---------------------------------------------------------------------------
 Version 6.1.11  [BETA] (rgerhards), 2011-07-11
 - systemd support: set stdout/stderr to null - thx to Lennart for the patch
@@ -9803,7 +11297,7 @@ Version 6.1.10  [BETA] (rgerhards), 2011-06-22
 - bugfix: mutex was invalidly left unlocked during action processing
   At least one case where this can occur is during thread shutdown, which
   may be initiated by lower activity. In most cases, this is quite
-  unlikely to happen. However, if it does, data structures may be 
+  unlikely to happen. However, if it does, data structures may be
   corrupted which could lead to fatal failure and segfault. I detected
   this via a testbench test, not a user report. But I assume that some
   users may have had unreproducable aborts that were cause by this bug.
@@ -9815,7 +11309,7 @@ Version 6.1.9  [BETA] (rgerhards), 2011-06-14
 - bugfix: mutex was invalidly left unlocked during action processing
   At least one case where this can occur is during thread shutdown, which
   may be initiated by lower activity. In most cases, this is quite
-  unlikely to happen. However, if it does, data structures may be 
+  unlikely to happen. However, if it does, data structures may be
   corrupted which could lead to fatal failure and segfault. I detected
   this via a testbench test, not a user report. But I assume that some
   users may have had unreproducable aborts that were cause by this bug.
@@ -9892,12 +11386,12 @@ Version 6.1.5  [DEVEL] (rgerhards), 2011-03-04
   as well as potentially in a number of other places where MsgDup() was
   used. This only happened when the imudp input module was used and it
   depended on name resolution not yet had taken place. In other words,
-  this was a strange problem that could lead to hard to diagnose 
+  this was a strange problem that could lead to hard to diagnose
   instability. So if you experience instability, chances are good that
   this fix will help.
 ---------------------------------------------------------------------------
 Version 6.1.4  [DEVEL] (rgerhards), 2011-02-18
-- bugfix/omhdfs: directive $OMHDFSFileName rendered unusable 
+- bugfix/omhdfs: directive $OMHDFSFileName rendered unusable
   due to a search and replace-induced bug ;)
 - bugfix: minor race condition in action.c - considered cosmetic
   This is considered cosmetic as multiple threads tried to write exactly
@@ -9921,7 +11415,7 @@ Version 6.1.4  [DEVEL] (rgerhards), 2011-02-18
   circumstances. This has now been solved, at least for common
   situations.
 - bugfix: fixed compile problem due to empty structs
-  this occurred only on some platforms/compilers. thanks to Dražen Kačar 
+  this occurred only on some platforms/compilers. thanks to Dražen Kačar
   for the fix
 ---------------------------------------------------------------------------
 Version 6.1.3  [DEVEL] (rgerhards), 2011-02-01
@@ -9929,7 +11423,7 @@ Version 6.1.3  [DEVEL] (rgerhards), 2011-02-01
 - added $IMUDPSchedulingPolicy and $IMUDPSchedulingPriority config settings
 - added $LocalHostName config directive
 - improved tcpsrv performance by enabling multiple-entry epoll
-  so far, we always pulled a single event from the epoll interface. 
+  so far, we always pulled a single event from the epoll interface.
   Now 128, what should result in performance improvement (less API
   calls) on busy systems. Most importantly affects imtcp.
 - imptcp now supports non-cancel termination mode, a plus in stability
@@ -9937,7 +11431,7 @@ Version 6.1.3  [DEVEL] (rgerhards), 2011-02-01
 - new directive $InputIMPTcpHelperThreads added
 - bugfix: fixed build problems on some platforms
   namely those that have 32bit atomic operations but not 64 bit ones
-- bugfix: local hostname was pulled too-early, so that some config 
+- bugfix: local hostname was pulled too-early, so that some config
   directives (namely FQDN settings) did not have any effect
 - enhanced tcpflood to support multiple sender threads
   this is required for some high-throughput scenarios (and necessary to
@@ -9955,7 +11449,7 @@ Version 6.1.2  [DEVEL] (rgerhards), 2010-12-16
   - disk-based queues
   - asynchronous action queues
   You can not use the new functionality together with these features.
-  This limitation will be removed in later releases. However, we 
+  This limitation will be removed in later releases. However, we
   preferred to release early, so that one can experiment with the new
   feature set and accepted the price that this means the full set of
   functionality is not yet available. If not used together with
@@ -9984,7 +11478,7 @@ Version 6.1.1  [DEVEL] (rgerhards), 2010-11-30
 Version 6.1.0  [DEVEL] (rgerhards), 2010-08-12
 
 *********************************** NOTE **********************************
-The v6 versions of rsyslog feature a greatly redesigned config system 
+The v6 versions of rsyslog feature a greatly redesigned config system
 which, among others, supports scoping. However, the initial version does
 not contain the whole new system. Rather it will evolve. So it is
 expected that interfaces, even new ones, break during the initial
@@ -10016,7 +11510,7 @@ Version 5.10.2  [V5-STABLE], 201?-??-??
   each message, even it is used for the message time too.
   Thanks to Marius Tomaschewski for the patch.
 - bugfix: imklog mistakenly took kernel timestamp subseconds as nanoseconds
-  ... actually, they are microseconds. So the fractional part of the 
+  ... actually, they are microseconds. So the fractional part of the
   timestamp was not properly formatted.
   Thanks to Marius Tomaschewski for the bug report and the patch idea.
 - imklog: added $klogKeepKernelTimestamp option
@@ -10024,7 +11518,7 @@ Version 5.10.2  [V5-STABLE], 201?-??-??
   each message, even it is used for the message time too.
   Thanks to Marius Tomaschewski for the patch.
 - bugfix: imklog mistakenly took kernel timestamp subseconds as nanoseconds
-  ... actually, they are microseconds. So the fractional part of the 
+  ... actually, they are microseconds. So the fractional part of the
   timestamp was not properly formatted.
   Thanks to Marius Tomaschewski for the bug report and the patch idea.
 - bugfix: invalid DST handling under Solaris
@@ -10047,9 +11541,9 @@ Version 5.10.1  [V5-STABLE], 2012-10-17
   http://bugzilla.adiscon.com/show_bug.cgi?id=355
   Thanks to pilou@gmx.com for the bug report
 - bugfix: remove invalid socket option call from imuxsock
-  Thanks to Cristian Ionescu-Idbohrn and Jonny Törnbom 
-- bugfix: fixed wrong bufferlength for snprintf in tcpflood.c when using 
-  the -f (dynafiles) option. 
+  Thanks to Cristian Ionescu-Idbohrn and Jonny Törnbom
+- bugfix: fixed wrong bufferlength for snprintf in tcpflood.c when using
+  the -f (dynafiles) option.
 - fixed issues in build system (namely related to cust1 dummy plugin)
 ---------------------------------------------------------------------------
 Version 5.10.0  [V5-STABLE], 2012-08-23
@@ -10060,14 +11554,14 @@ NOTE: this is the new rsyslog v5-stable, incorporating all changes from the
 
 - bugfix: delayable source could block action queue, even if there was
   a disk queue associated with it. The root cause of this problem was
-  that it makes no sense to delay messages once they arrive in the 
+  that it makes no sense to delay messages once they arrive in the
   action queue - the "input" that is being held in that case is the main
   queue worker, what makes no sense.
-  Thanks to Marcin for alerting us on this problem and providing 
+  Thanks to Marcin for alerting us on this problem and providing
   instructions to reproduce it.
 - bugfix: disk queue was not persisted on shutdown, regression of fix to
   http://bugzilla.adiscon.com/show_bug.cgi?id=299
-  The new code also handles the case of shutdown of blocking light and 
+  The new code also handles the case of shutdown of blocking light and
   full delayable sources somewhat smarter and permits, assuming sufficient
   timeouts, to persist message up to the max queue capacity. Also some nits
   in debug instrumentation have been fixed.
@@ -10119,8 +11613,8 @@ Version 5.9.6  [V5-BETA], 2012-04-12
 - bugfix: imptcp input name could not be set
   config directive was accepted, but had no effect
 - added configuration directive to disable octet-counted framing
-  for imtcp, directive is $InputTCPServerSupportOctetCountedFraming 
-  for imptcp, directive is $InputPTCPServerSupportOctetCountedFraming 
+  for imtcp, directive is $InputTCPServerSupportOctetCountedFraming
+  for imptcp, directive is $InputPTCPServerSupportOctetCountedFraming
 - added capability to use a local interface IP address as fromhost-ip for
   locally originating messages. New directive $LocalHostIPIF
 - added configuration directives to customize queue light delay marks
@@ -10162,7 +11656,7 @@ Version 5.9.4  [V5-DEVEL], 2011-11-29
 Version 5.9.3  [V5-DEVEL], 2011-09-01
 - bugfix/security: off-by-two bug in legacy syslog parser, CVE-2011-3200
 - bugfix: mark message processing did not work correctly
-- added capability to emit config error location info for warnings 
+- added capability to emit config error location info for warnings
   otherwise, omusrmsg's warning about new config format was not
   accompanied by problem location.
 - bugfix: potential misaddressing in property replacer
@@ -10199,7 +11693,7 @@ Version 5.9.1  [V5-DEVEL] (rgerhards), 2011-06-30
 - bugfix: mutex was invalidly left unlocked during action processing
   At least one case where this can occur is during thread shutdown, which
   may be initiated by lower activity. In most cases, this is quite
-  unlikely to happen. However, if it does, data structures may be 
+  unlikely to happen. However, if it does, data structures may be
   corrupted which could lead to fatal failure and segfault. I detected
   this via a testbench test, not a user report. But I assume that some
   users may have had unreproducable aborts that were cause by this bug.
@@ -10271,25 +11765,25 @@ Version 5.8.12  [V5-stable] 2012-06-06
   Thanks to Alec Warner for the patch
 - bugfix: delayable source could block action queue, even if there was
   a disk queue associated with it. The root cause of this problem was
-  that it makes no sense to delay messages once they arrive in the 
+  that it makes no sense to delay messages once they arrive in the
   action queue - the "input" that is being held in that case is the main
   queue worker, what makes no sense.
-  Thanks to Marcin for alerting us on this problem and providing 
+  Thanks to Marcin for alerting us on this problem and providing
   instructions to reproduce it.
 - bugfix: disk queue was not persisted on shutdown, regression of fix to
   http://bugzilla.adiscon.com/show_bug.cgi?id=299
-  The new code also handles the case of shutdown of blocking light and 
+  The new code also handles the case of shutdown of blocking light and
   full delayable sources somewhat smarter and permits, assuming sufficient
   timeouts, to persist message up to the max queue capacity. Also some nits
   in debug instrumentation have been fixed.
 - bugfix/omudpspoof: problems, including abort, happened when run on
-  multiple threads. Root cause is that libnet is not thread-safe. 
+  multiple threads. Root cause is that libnet is not thread-safe.
   omudpspoof now guards libnet calls with their own mutex.
 - bugfix: if debug message could end up in log file when forking
   if rsyslog was set to auto-background (thus fork, the default) and debug
   mode to stdout was enabled, debug messages ended up in the first log file
   opened. Currently, stdout logging is completely disabled in forking mode
-  (but writing to the debug log file is still possible). This is a change 
+  (but writing to the debug log file is still possible). This is a change
   in behavior, which is under review. If it causes problems to you,
   please let us know.
   Thanks to Tomas Heinrich for the patch.
@@ -10405,8 +11899,8 @@ Version 5.8.5  [V5-stable] (rgerhards/al), 2011-09-01
 - bugfix: too-early string termination during tag emulation
 - bugfix: The NUL-Byte for the syslogtag was not copied in MsgDup (msg.c)
 - bugfix: fixed incorrect state handling for Discard Action (transactions)
-  Note: This caused all messages in a batch to be set to COMMITTED, 
-  even if they were discarded. 
+  Note: This caused all messages in a batch to be set to COMMITTED,
+  even if they were discarded.
 ---------------------------------------------------------------------------
 Version 5.8.4  [V5-stable] (al), 2011-08-10
 - bugfix: potential misaddressing in property replacer
@@ -10432,7 +11926,7 @@ Version 5.8.2  [V5-stable] (rgerhards), 2011-06-21
 - bugfix: mutex was invalidly left unlocked during action processing
   At least one case where this can occur is during thread shutdown, which
   may be initiated by lower activity. In most cases, this is quite
-  unlikely to happen. However, if it does, data structures may be 
+  unlikely to happen. However, if it does, data structures may be
   corrupted which could lead to fatal failure and segfault. I detected
   this via a testbench test, not a user report. But I assume that some
   users may have had unreproducable aborts that were cause by this bug.
@@ -10455,8 +11949,8 @@ Version 5.8.1  [V5-stable] (rgerhards), 2011-05-19
 - new module mmsnmptrapd, a sample message modification module
   This can be useful to reformat snmptrapd messages and also serves as
   a sample for how to write message modification modules using the
-  output module interface. Note that we introduced this new 
-  functionality directly into the stable release, as it does not 
+  output module interface. Note that we introduced this new
+  functionality directly into the stable release, as it does not
   modify the core and as such cannot have any side-effects if it is
   not used (and thus the risk is solely on users requiring that
   functionality).
@@ -10544,7 +12038,7 @@ Version 5.7.7  [V5-BETA] (rgerhards), 2011-03-02
   as well as potentially in a number of other places where MsgDup() was
   used. This only happened when the imudp input module was used and it
   depended on name resolution not yet had taken place. In other words,
-  this was a strange problem that could lead to hard to diagnose 
+  this was a strange problem that could lead to hard to diagnose
   instability. So if you experience instability, chances are good that
   this fix will help.
 ---------------------------------------------------------------------------
@@ -10565,7 +12059,7 @@ Version 5.7.5  [V5-BETA] (rgerhards), 2011-02-23
 - improved testbench, added tests for imuxsock
 - bugfix: imuxsock did no longer sanitize received messages
   This was a regression from the imuxsock partial rewrite. Happened
-  because the message is no longer run through the standard parsers. 
+  because the message is no longer run through the standard parsers.
   bug tracker: http://bugzilla.adiscon.com/show_bug.cgi?id=224
 - bugfix: minor race condition in action.c - considered cosmetic
   This is considered cosmetic as multiple threads tried to write exactly
@@ -10591,7 +12085,7 @@ Version 5.7.4  [V5-BETA] (rgerhards), 2011-02-17
   circumstances. This has now been solved, at least for common
   situations.
 - bugfix: fixed compile problem due to empty structs
-  this occurred only on some platforms/compilers. thanks to Dražen Kačar 
+  this occurred only on some platforms/compilers. thanks to Dražen Kačar
   for the fix
 ---------------------------------------------------------------------------
 Version 5.7.3  [V5-BETA] (rgerhards), 2011-02-07
@@ -10600,7 +12094,7 @@ Version 5.7.3  [V5-BETA] (rgerhards), 2011-02-07
 - added $LocalHostName config directive
 - bugfix: fixed build problems on some platforms
   namely those that have 32bit atomic operations but not 64 bit ones
-- bugfix: local hostname was pulled too-early, so that some config 
+- bugfix: local hostname was pulled too-early, so that some config
   directives (namely FQDN settings) did not have any effect
 - bugfix: imfile did duplicate messages under some circumstances
 - added $OMMySQLConfigFile config directive
@@ -10630,8 +12124,8 @@ Version 5.7.1  [V5-DEVEL] (rgerhards), 2010-10-05
   user against processes spamming the system log
   (thanks to Lennart Poettering for suggesting this feature)
 - added new config statements
-  * $InputUnixListenSocketUsePIDFromSystem 
-  * $SystemLogUsePIDFromSystem 
+  * $InputUnixListenSocketUsePIDFromSystem
+  * $SystemLogUsePIDFromSystem
   * $SystemLogRateLimitInterval
   * $SystemLogRateLimitBurst
   * $SystemLogRateLimitSeverity
@@ -10669,7 +12163,7 @@ Version 5.6.4  [V5-STABLE] (rgerhards), 2011-03-03
   as well as potentially in a number of other places where MsgDup() was
   used. This only happened when the imudp input module was used and it
   depended on name resolution not yet had taken place. In other words,
-  this was a strange problem that could lead to hard to diagnose 
+  this was a strange problem that could lead to hard to diagnose
   instability. So if you experience instability, chances are good that
   this fix will help.
 - bugfix: fixed a memory leak and potential abort condition
@@ -10742,7 +12236,7 @@ Version 5.5.7  [V5-BETA] (rgerhards), 2010-08-09
 - changed omudpspoof default spoof address to simplify typical use case
   thanks to David Lang for suggesting this
 - doc bugfix: pmlastmsg doc samples had errors
-- bugfix[minor]: pmrfc3164sd had invalid name (resided in rsyslog name 
+- bugfix[minor]: pmrfc3164sd had invalid name (resided in rsyslog name
   space, what should not be the case for a contributed module)
 - added omuxsock, which permits to write message to local Unix sockets
   this is the counterpart to imuxsock, enabling fast local forwarding
@@ -10751,14 +12245,14 @@ Version 5.5.6  [DEVEL] (rgerhards), 2010-07-21
 - added parser modules
   * pmlastmsg, which supports the notoriously malformed "last message
     repeated n times" messages from some syslogd's (namely sysklogd)
-  * pmrfc3164sd (contributed), supports RFC5424 structured data in 
+  * pmrfc3164sd (contributed), supports RFC5424 structured data in
     RFC3164 messages [untested]
 - added new module type "string generator", used to speed up output
   processing. Expected speedup for (typical) rsyslog processing is
   roughly 5 to 6 percent compared to using string-based templates.
   They may also be used to do more complex formatting with custom
   C code, what provided greater flexibility and probably far higher
-  speed, for example if using multiple regular expressions within a 
+  speed, for example if using multiple regular expressions within a
   template.
 - added 4 string generators for
   * RSYSLOG_FileFormat
@@ -10848,7 +12342,7 @@ Version 5.5.0  [DEVEL] (rgerhards), 2009-11-18
   Most importantly, DNS resolution now never happens if the resolved name
   is not required. Note that this applies to imudp - for the other inputs,
   DNS resolution almost comes for free, so we do not do it there. However,
-  the new method has been implemented in a generic way and as such may 
+  the new method has been implemented in a generic way and as such may
   also be used by other modules in the future.
 - added option to use unlimited-size select() calls
   Thanks to varmojfekoj for the patch
@@ -10859,7 +12353,7 @@ Version 5.4.2  [v5-stable] (rgerhards), 2010-03-??
 - bugfix(kind of): output plugin retry behavior could cause engine to loop
   The rsyslog engine did not guard itself against output modules that do
   not properly convey back the tryResume() behavior. This then leads to
-  what looks like an endless loop. I consider this to be a bug of the 
+  what looks like an endless loop. I consider this to be a bug of the
   engine not only because it should be hardened against plugin misbehavior,
   but also because plugins may not be totally able to avoid this situation
   (depending on the type of and processing done by the plugin).
@@ -10868,7 +12362,7 @@ Version 5.4.2  [v5-stable] (rgerhards), 2010-03-??
   to-be-checked-for responses
 - temporary bugfix replaced by permanent one for
   message-induced off-by-one error (potential segfault) (see 4.6.2)
-  The analysis has been completed and a better fix been crafted and 
+  The analysis has been completed and a better fix been crafted and
   integrated.
 - bugfix(minor): status variable was uninitialized
   However, this would have caused harm only if NO parser modules at
@@ -10906,7 +12400,7 @@ Version 5.3.7  [BETA] (rgerhards), 2010-01-27
   Thanks to Michael Biebl for alerting us on this problem.
 - bugfix: hostname accidentally set to IP address for some message sources,
   for example imudp. Thanks to Anton for reporting this bug. [imported v4]
-- bugfix: ompgsql had problems with transaction support, what actually 
+- bugfix: ompgsql had problems with transaction support, what actually
   rendered it unusable. Thanks to forum user "horhe" for alerting me
   on this bug and helping to debug/fix it! [imported from 5.3.6]
 - bugfix: $CreateDirs variable not properly initialized, default thus
@@ -10937,7 +12431,7 @@ Version 5.3.6  [BETA] (rgerhards), 2010-01-13
   Thanks to Jonathan Bond-Caron for the patch.
 - bugfix: $CreateDirs variable not properly initialized, default thus
   was random (but most often "on") [imported from v3]
-- bugfix: ompgsql had problems with transaction support, what actually 
+- bugfix: ompgsql had problems with transaction support, what actually
   rendered it unusable. Thanks to forum user "horhe" for alerting me
   on this bug and helping to debug/fix it!
 - bugfix: memory leak when sending messages in zip-compressed format
@@ -10951,12 +12445,12 @@ Version 5.3.5  [BETA] (rgerhards), 2009-11-13
 - some light performance enhancement by replacing time() call with much
   faster (at least under linux) gettimeofday() calls.
 - some improvement of omfile performance with dynafiles
-  saved costly time() calls by employing a logical clock, which is 
+  saved costly time() calls by employing a logical clock, which is
   sufficient for the use case
 - bugfix: omudpspoof miscalculated source and destination ports
   while this was probably not noticed for source ports, it resulted in
   almost all destination ports being wrong, except for the default port
-  of 514, which by virtue of its binary representation was calculated 
+  of 514, which by virtue of its binary representation was calculated
   correct (and probably thus the bug not earlier detected).
 - bugfixes imported from earlier releases
   * bugfix: named pipes did no longer work (they always got an open error)
@@ -10979,7 +12473,7 @@ Version 5.3.4  [DEVEL] (rgerhards), 2009-11-04
 - added the ability to create custom message parsers
 - added $RulesetParser config directive that permits to bind specific
   parsers to specific rulesets
-- added omruleset output module, which provides great flexibility in 
+- added omruleset output module, which provides great flexibility in
   action processing. THIS IS A VERY IMPORTANT ADDITION, see its doc
   for why.
 - added the capability to have ruleset-specific main message queues
@@ -11001,7 +12495,7 @@ Version 5.3.3  [DEVEL] (rgerhards), 2009-10-27
   value for malloced memory (optional, only if requested by configure
   option). This helps to track down some otherwise undetected issues
   within the testbench.
-- bugfix: potential abort if inputname property was not set 
+- bugfix: potential abort if inputname property was not set
   primarily a problem of imdiag
 - bugfix: message processing states were not set correctly in all cases
   however, this had no negative effect, as the message processing state
@@ -11071,8 +12565,8 @@ Version 5.2.1  [v5-stable] (rgerhards), 2009-11-02
   [imported from v3-stable]
 ---------------------------------------------------------------------------
 Version 5.2.0  [v5-stable] (rgerhards), 2009-11-02
-This is a re-release of version 5.1.6 as stable after we did not get any bug 
-reports during the whole beta phase. Still, this first v5-stable may not be 
+This is a re-release of version 5.1.6 as stable after we did not get any bug
+reports during the whole beta phase. Still, this first v5-stable may not be
 as stable as one hopes for, I am not sure if we did not get bug reports
 just because nobody tried it. Anyhow, we need to go forward and so we
 have the initial v5-stable.
@@ -11121,11 +12615,11 @@ Version 5.1.4  [DEVEL] (rgerhards), 2009-08-20
 - legacy syslog parser changed so that it now accepts date stamps in
   wrong case. Some devices seem to create them and I do not see any harm
   in supporting that.
-- added $InputTCPMaxListeners directive - permits to specify how many 
+- added $InputTCPMaxListeners directive - permits to specify how many
   TCP servers shall be possible (default is 20).
 - bugfix: memory leak with some input modules. Those inputs that
   use parseAndSubmitMsg() leak two small memory blocks with every message.
-  Typically, those process only relatively few messages, so the issue 
+  Typically, those process only relatively few messages, so the issue
   does most probably not have any effect in practice.
 - bugfix: if tcp listen port could not be created, no error message was
   emitted
@@ -11135,7 +12629,7 @@ Version 5.1.4  [DEVEL] (rgerhards), 2009-08-20
   In async write mode, we use modular arithmetic to index the output
   buffer array. However, the counter variables accidentally were signed,
   thus resulting in negative indices after integer overflow. That in turn
-  could lead to segfaults, but was depending on the memory layout of 
+  could lead to segfaults, but was depending on the memory layout of
   the instance in question (which in turn depended on a number of
   variables, like compile settings but also configuration). The counters
   are now unsigned (as they always should have been) and so the dangling
@@ -11144,7 +12638,7 @@ Version 5.1.4  [DEVEL] (rgerhards), 2009-08-20
 ---------------------------------------------------------------------------
 Version 5.1.3  [DEVEL] (rgerhards), 2009-07-28
 - architecture change: queue now always has at least one worker thread
-  if not running in direct mode. Previous versions could run without 
+  if not running in direct mode. Previous versions could run without
   any active workers. This simplifies the code at a very small expense.
   See v5 compatibility note document for more in-depth discussion.
 - enhance: UDP spoofing supported via new output module omudpspoof
@@ -11173,7 +12667,7 @@ Version 5.1.2  [DEVEL] (rgerhards), 2009-07-08
 ---------------------------------------------------------------------------
 Version 5.1.1  [DEVEL] (rgerhards), 2009-07-03
 - bugfix: huge memory leak in queue engine (made rsyslogd unusable in
-  production). Occurred if at least one queue was in direct mode 
+  production). Occurred if at least one queue was in direct mode
   (the default for action queues)
 - imported many performance optimizations from v4-devel (4.5.0)
 - bugfix: subtle (and usually irrelevant) issue in timeout processing
@@ -11208,7 +12702,7 @@ increase.
 - redesigned queue engine so that it supports ultra-reliable operations
   This resulted in a rewrite of large parts. The new capability can be
   used to build audit-grade systems on the basis of rsyslog.
-- added $MainMsgQueueDequeueBatchSize and $ActionQueueDequeueBatchSize 
+- added $MainMsgQueueDequeueBatchSize and $ActionQueueDequeueBatchSize
   configuration directives
 - implemented a new transactional output module interface which provides
   superior performance (for databases potentially far superior performance)
@@ -11363,7 +12857,7 @@ Version 4.6.6  [v4-stable] (rgerhards), 2011-06-24
      Note that when we check the size, we MUST NOT check for equality.
      The reason is that the file may have been written right after we
      did try to read (so the file size has increased). That is NOT in
-     indicator of a rollover (this is an actual bug scenario we 
+     indicator of a rollover (this is an actual bug scenario we
      experienced). So we need to check if the new size is smaller than
      what we already have seen!
   Also, under some circumstances an invalid truncation was detected. This
@@ -11420,7 +12914,7 @@ Version 4.6.3  [v4-stable] (rgerhards), 2010-07-07
   to-be-checked-for responses
 - temporary bugfix replaced by permanent one for
   message-induced off-by-one error (potential segfault) (see 4.6.2)
-  The analysis has been completed and a better fix been crafted and 
+  The analysis has been completed and a better fix been crafted and
   integrated.
 - bugfix: the T/P/E config size specifiers did not work properly under
   all 32-bit platforms
@@ -11441,7 +12935,7 @@ Version 4.6.2  [v4-stable] (rgerhards), 2010-03-26
   (for example, \0 or \n as the last character, and generally control
   character escaption is questionable). This is due to not strictly
   following a the \0 or string counted string paradigm (during the last
-  optimization on the cstring class). As a temporary fix, we have 
+  optimization on the cstring class). As a temporary fix, we have
   introduced a proper recalculation of the size. However, a final
   patch is expected in the future. See bug tracker for further details
   and when the final patch will be available:
@@ -11500,11 +12994,11 @@ Version 4.6.2  [v4-stable] (rgerhards), 2010-03-26
   This could only happen during config file parsing.
 - bugfix(minor): handling of extremely large strings in dbgprintf() fixed
   Previously, it could lead to garbage output and, in extreme cases, also
-  to segfaults. Note: this was a problem only when debug output was 
+  to segfaults. Note: this was a problem only when debug output was
   actually enabled, so it caused no problem in production use.
 - bugfix(minor): BSD_SO_COMPAT query function had some global vars not
-  properly initialized. However, in practice the loader initializes them 
-  with zero, the desired value, so there were no actual issue in almost 
+  properly initialized. However, in practice the loader initializes them
+  with zero, the desired value, so there were no actual issue in almost
   all cases.
 ---------------------------------------------------------------------------
 Version 4.6.1  [v4-stable] (rgerhards), 2010-03-04
@@ -11515,7 +13009,7 @@ Version 4.6.1  [v4-stable] (rgerhards), 2010-03-04
   ... and other weird problems. This seemed to affect 32bit-platforms
   only, but I can not totally outrule there were issues on other
   platforms as well. The previous code could cause system data types
-  to be defined inconsistently, and that could lead to various 
+  to be defined inconsistently, and that could lead to various
   troubles. Special thanks go to the Mandriva team for identifying
   an initial problem, help discussing it and ultimately a fix they
   contributed.
@@ -11528,8 +13022,8 @@ Version 4.6.1  [v4-stable] (rgerhards), 2010-03-04
   could lead to a segfault, especially if iCurrElt then points to the
   then-partial record. Not very likely, but could happen in practice.
 - bugfix (theoretical): potential segfault in omfile under low memory
-  condition. This is only a theoretical bug, because it would only 
-  happen when strdup() fails to allocate memory - which is highly 
+  condition. This is only a theoretical bug, because it would only
+  happen when strdup() fails to allocate memory - which is highly
   unlikely and will probably lead to all other sorts of errors.
 - bugfix: comment char ('#') in literal terminated script parsing
   and thus could not be used.
@@ -11605,7 +13099,7 @@ Version 4.5.6  [v4-beta] (rgerhards), 2009-11-05
 - bugfix(minor): diag function returned wrong queue member count
   for the main queue if an active DA queue existed. This had no relevance
   to real deployments (assuming they are not running the debug/diagnostic
-  module...), but sometimes caused grief and false alerts in the 
+  module...), but sometimes caused grief and false alerts in the
   testbench.
 - included some important fixes from v4-stable:
   * bugfix: invalid handling of zero-sized messages
@@ -11625,7 +13119,7 @@ Version 4.5.5  [v4-beta] (rgerhards), 2009-10-21
   is now 32K
 - bugfix: invalid storage class selected for some size config parameters.
   This resulted in wrong values. The most prominent victim was the
-  directory creation mode, which was set to zero in some cases. For 
+  directory creation mode, which was set to zero in some cases. For
   details, see related blog post:
   http://blog.gerhards.net/2009/10/another-note-on-hard-to-find-bugs.html
 ---------------------------------------------------------------------------
@@ -11670,11 +13164,11 @@ Version 4.5.2  [v4-beta] (rgerhards), 2009-08-21
 - legacy syslog parser changed so that it now accepts date stamps in
   wrong case. Some devices seem to create them and I do not see any harm
   in supporting that.
-- added $InputTCPMaxListeners directive - permits to specify how many 
+- added $InputTCPMaxListeners directive - permits to specify how many
   TCP servers shall be possible (default is 20).
 - bugfix: memory leak with some input modules. Those inputs that
   use parseAndSubmitMsg() leak two small memory blocks with every message.
-  Typically, those process only relatively few messages, so the issue 
+  Typically, those process only relatively few messages, so the issue
   does most probably not have any effect in practice.
 - bugfix: if tcp listen port could not be created, no error message was
   emitted
@@ -11682,7 +13176,7 @@ Version 4.5.2  [v4-beta] (rgerhards), 2009-08-21
   In async write mode, we use modular arithmetic to index the output
   buffer array. However, the counter variables accidentally were signed,
   thus resulting in negative indices after integer overflow. That in turn
-  could lead to segfaults, but was depending on the memory layout of 
+  could lead to segfaults, but was depending on the memory layout of
   the instance in question (which in turn depended on a number of
   variables, like compile settings but also configuration). The counters
   are now unsigned (as they always should have been) and so the dangling
@@ -11710,7 +13204,7 @@ Version 4.5.1  [DEVEL] (rgerhards), 2009-07-15
   This was a result of an internal processing error if maximum field
   sizes had been specified in the property replacer.
 - added ability for the TCP output action to "rebind" its send socket after
-  sending n messages (actually, it re-opens the connection, the name is 
+  sending n messages (actually, it re-opens the connection, the name is
   used because this is a concept very similar to $ActionUDPRebindInterval).
   New config directive $ActionSendTCPRebindInterval added for the purpose.
   By default, rebinding is disabled. This is considered useful for load
@@ -11809,7 +13303,7 @@ Version 4.4.1  [v4-stable] (rgerhards), 2009-09-02
 ---------------------------------------------------------------------------
 Version 4.4.0  [v4-stable] (rgerhards), 2009-08-21
 - bugfix: stderr/stdout were not closed to be able to emit error messages,
-  but this caused ssh sessions to hang. Now we close them after the 
+  but this caused ssh sessions to hang. Now we close them after the
   initial initialization. See forum thread:
   http://kb.monitorware.com/controlling-terminal-issues-t9875.html
 - bugfix: sending syslog messages with zip compression did not work
@@ -11820,7 +13314,7 @@ Version 4.3.2  [v4-beta] (rgerhards), 2009-06-24
   syslog tcp server)
 - added ability for the UDP output action to rebind its send socket after
   sending n messages. New config directive $ActionSendUDPRebindInterval
-  added for the purpose. By default, rebinding is disabled. This is 
+  added for the purpose. By default, rebinding is disabled. This is
   considered useful for load balancers.
 - bugfix: imdiag/imtcp had a race condition
 - improved testbench (now much better code design and reuse)
@@ -11844,8 +13338,8 @@ Version 4.3.1  [DEVEL] (rgerhards), 2009-05-25
 - bugfix: light and full delay watermarks had invalid values, badly
   affecting performance for delayable inputs
 - build system improvements - thanks to Michael Biebl
-- added new testing module imdiag, which enables to talk to the 
-  rsyslog core at runtime. The current implementation is only a 
+- added new testing module imdiag, which enables to talk to the
+  rsyslog core at runtime. The current implementation is only a
   beginning, but can be expanded over time
 ---------------------------------------------------------------------------
 Version 4.3.0  [DEVEL] (rgerhards), 2009-04-17
@@ -12005,7 +13499,7 @@ version before switching to this one.
 - enhanced legacy syslog parser to detect year if part of the timestamp
   the format is based on what Cisco devices seem to emit.
 - added a setting "$OptimizeForUniprocessor" to enable users to turn off
-  pthread_yield calls which are counter-productive on multiprocessor 
+  pthread_yield calls which are counter-productive on multiprocessor
   machines (but have been shown to be useful on uniprocessors)
 - reordered imudp processing. Message parsing is now done as part of main
   message queue worker processing (was part of the input thread)
@@ -12045,7 +13539,7 @@ Version 3.22.2 [v3-stable] (rgerhards), 2010-08-05
 - bugfix: comment char ('#') in literal terminated script parsing
   and thus could not be used.
   but tracker: http://bugzilla.adiscon.com/show_bug.cgi?id=119
-- enhance: imrelp now also provides remote peer's IP address 
+- enhance: imrelp now also provides remote peer's IP address
   [if librelp != 1.0.0 is used]
 - bugfix: sending syslog messages with zip compression did not work
 - bugfix: potential hang condition on queue shutdown
@@ -12065,11 +13559,11 @@ Version 3.22.1 [v3-stable] (rgerhards), 2009-07-02
 - bugfix: invalid error message issued if $includeConfig was on an empty
   set of files (e.g. *.conf, where none such files existed)
   thanks to Michael Biebl for reporting this bug
-- bugfix: when run in foreground (but not in debug mode), a 
+- bugfix: when run in foreground (but not in debug mode), a
   debug message ("DoDie called") was emitted at shutdown. Removed.
   thanks to Michael Biebl for reporting this bug
 - bugfix: some garbage was emitted to stderr on shutdown. This
-  garbage consisted of file names, which were written during 
+  garbage consisted of file names, which were written during
   startup (key point: not a pointer error)
   thanks to Michael Biebl for reporting this bug
 - bugfix: startup and shutdown message were emitted to stdout
@@ -12277,7 +13771,7 @@ Version 3.20.5 [v3-stable] (rgerhards), 2009-04-02
   go to vbernetr, who performed the analysis and provided patch, which
   I only tweaked a very little bit.
 - fixed bugs in RainerScript:
-  o when converting a number and a string to a common type, both were 
+  o when converting a number and a string to a common type, both were
     actually converted to the other variable's type.
   o the value of rsCStrConvertToNumber() was miscalculated.
   Thanks to varmojfekoj for the patch
@@ -12325,7 +13819,7 @@ Version 3.20.1 [v3-stable] (rgerhards), 2008-12-04
   not found. This is probably useful for storing numerical values into
   database columns.
 - bugfix: memory leak in gtls netstream driver fixed
-  memory was lost each time a TLS session was torn down. This could 
+  memory was lost each time a TLS session was torn down. This could
   result in a considerable memory leak if it happened quite frequently
   (potential system crash condition)
 - doc update: documented how to specify multiple property replacer
@@ -12373,7 +13867,7 @@ Version 3.19.10 [BETA] (rgerhards), 2008-07-15
   happen in practice. We use non-blocking IO only for server-based gtls
   session setup. As TLS requires the exchange of multiple frames before
   the handshake completes, it simply is impossible to do this in one
-  step. However, it is useful to have the code path correct even for 
+  step. However, it is useful to have the code path correct even for
   this case - otherwise, we may run into problems if the code is changed
   some time later (e.g. to use blocking sockets). Thanks to varmojfekoj
   for providing the patch.
@@ -12544,7 +14038,7 @@ Version 3.18.5 (rgerhards), 2008-10-09
   could potentially be blocked for a longer period of time, which
   was not the behavior desired.
 - doc bugfix: $ActionExecOnlyWhenPreviousIsSuspended was still misspelled
-  as $...OnlyIfPrev... in some parts of the documentation. Thanks to 
+  as $...OnlyIfPrev... in some parts of the documentation. Thanks to
   Lorenzo M. Catucci for reporting this bug.
 - added doc on malformed messages, cause and how to work-around, to the
   doc set
@@ -12634,7 +14128,7 @@ Version 3.18.1 (rgerhards), 2008-07-21
   template. However, we consider this scenario to be quite remote and,
   even if it exists, it is not expected that it will actually cause
   problems with log parsers (instead, we assume the new default template
-  behavior may fix previous problems with log parsers due to the 
+  behavior may fix previous problems with log parsers due to the
   missing space).
 - bugfix: imklog module was not correctly compiled for GNU/kFreeBSD.
   Thanks to Petr Salinger for the patch
@@ -12680,7 +14174,7 @@ Version 3.17.1 (rgerhards), 2008-04-15
   also the main reason why we consider it not worth to be fixed any further.
 - enhanced legacy syslog parser to handle slightly malformed messages
   (with a space in front of the timestamp) - at least HP procurve is
-  known to do that and I won't outrule that others also do it. The 
+  known to do that and I won't outrule that others also do it. The
   change looks quite unintrusive and so we added it to the parser.
 - implemented klogd functionality for BSD
 - implemented high precision timestamps for the kernel log. Thanks to
@@ -12750,7 +14244,7 @@ Version 3.16.0 (rgerhards), 2008-04-24
 Version 3.15.1 (rgerhards), 2008-04-11
 - bugfix: some messages were emited without hostname
 - disabled atomic operations for the time being because they introduce some
-  cross-platform trouble - need to see how to fix this in the best 
+  cross-platform trouble - need to see how to fix this in the best
   possible way
 - bugfix: zero-length strings were not supported in object
   deserializer
@@ -12769,7 +14263,7 @@ Version 3.15.0 (rgerhards), 2008-04-01
   Plain tcp syslog, so far the best reliability solution, can lose
   messages when something goes wrong or a peer goes down. With RELP,
   this can no longer happen. See imrelp.html for more details.
-- bugfix: rsyslogd was no longer build by default; man pages are 
+- bugfix: rsyslogd was no longer build by default; man pages are
   only installed if corresponding option is selected. Thanks to
   Michael Biebl for pointing these problems out.
 ---------------------------------------------------------------------------
@@ -12795,7 +14289,7 @@ Version 3.14.2 (rgerhards), 2008-04-09
 ---------------------------------------------------------------------------
 Version 3.14.1 (rgerhards), 2008-04-04
 - bugfix: some messages were emited without hostname
-- bugfix: rsyslogd was no longer build by default; man pages are 
+- bugfix: rsyslogd was no longer build by default; man pages are
   only installed if corresponding option is selected. Thanks to
   Michael Biebl for pointing these problems out.
 - bugfix: zero-length strings were not supported in object
@@ -12882,7 +14376,7 @@ Version 3.12.4 (rgerhards), 2008-03-25
   quarter-hour logfile rotation
 - changed queue's discard severities default value to 8 (do not discard)
   to prevent unintentional message loss
-- removed a no-longer needed callback from the output module 
+- removed a no-longer needed callback from the output module
   interface. Results in reduced code complexity.
 - bugfix/doc: removed no longer supported -h option from man page
 - bugfix: imklog leaked several hundred KB on each HUP. Thanks to
@@ -12988,7 +14482,7 @@ Version 3.11.6 (rgerhards), 2008-02-27
 - bugfix: rsyslogd segfaulted on second SIGHUP
   tracker: http://bugzilla.adiscon.com/show_bug.cgi?id=38
 - improved stability of queue engine
-- bugfix: queue disk file were not properly persisted when 
+- bugfix: queue disk file were not properly persisted when
   immediately after closing an output file rsyslog was stopped
   or huped (the new output file open must NOT have happened at
   that point) - this lead to a sparse and invalid queue file
@@ -13000,7 +14494,7 @@ Version 3.11.6 (rgerhards), 2008-02-27
   regular worker was still executing. This could result in a segfault
   during shutdown.
   tracker: http://bugzilla.adiscon.com/show_bug.cgi?id=41
-- bugfix: queue properties sizeOnDisk, bytesRead were persisted to 
+- bugfix: queue properties sizeOnDisk, bytesRead were persisted to
   disk with wrong data type (long instead of int64) - could cause
   problems on 32 bit machines
 - bugfix: queue aborted when it was shut down, DA-enabled, DA mode
@@ -13008,14 +14502,14 @@ Version 3.11.6 (rgerhards), 2008-02-27
 - bugfix: imfile could abort under extreme stress conditions
   (when it was terminated before it could open all of its
   to be monitored files)
-- applied patch from varmojfekoj to fix an issue with compatibility 
+- applied patch from varmojfekoj to fix an issue with compatibility
   mode and default module directories (many thanks!):
-  I've also noticed a bug in the compatibility code; the problem is that 
-  options are parsed before configuration file so options which need a 
-  module to be loaded will currently ignore any $moddir directive. This 
-  can be fixed by moving legacyOptsHook() after config file parsing. 
-  (see the attached patch) This goes against the logical order of 
-  processing, but the legacy options are only few and it doesn't seem to 
+  I've also noticed a bug in the compatibility code; the problem is that
+  options are parsed before configuration file so options which need a
+  module to be loaded will currently ignore any $moddir directive. This
+  can be fixed by moving legacyOptsHook() after config file parsing.
+  (see the attached patch) This goes against the logical order of
+  processing, but the legacy options are only few and it doesn't seem to
   be a problem.
 - bugfix: object property deserializer did not handle negative numbers
 ---------------------------------------------------------------------------
@@ -13035,7 +14529,7 @@ Version 3.11.4 (rgerhards), 2008-02-21
 - general code cleanup and further modularization
 - $MainMessageQueueDiscardSeverity can now also handle textual severities
   (previously only integers)
-- bugfix: message object was not properly synchronized when the 
+- bugfix: message object was not properly synchronized when the
   main queue had a single thread and non-direct action queues were used
 - some documentation improvements
 ---------------------------------------------------------------------------
@@ -13086,7 +14580,7 @@ Version 3.11.1 (rgerhards), 2008-02-12
   Thanks to Anders Blomdell fro bringing this to our attention
 - somewhat improved performance of string buffers
 - fixed bug that caused invalid treatment of tabs (HT) in rsyslog.conf
-- bugfix: setting for $EscapeControlCharactersOnReceive was not 
+- bugfix: setting for $EscapeControlCharactersOnReceive was not
   properly initialized
 - clarified usage of space-cc property replacer option
 - improved abort diagnostic handler
@@ -13251,7 +14745,7 @@ Version 2.0.4 STABLE (rgerhards), 2008-03-27
   quarter-hour logfile rotation
 ---------------------------------------------------------------------------
 Version 2.0.3 STABLE (rgerhards), 2008-03-12
-- bugfix: setting for $EscapeControlCharactersOnReceive was not 
+- bugfix: setting for $EscapeControlCharactersOnReceive was not
   properly initialized
 - bugfix: resolved potential segfault condition on HUP (extremely
   unlikely to happen in practice), for details see tracker:
@@ -13409,7 +14903,7 @@ Version 1.19.6 (rgerhards), 2007-09-11
 - fixed a bug that in --enable-debug mode caused an assertion when the
   discard action was used
 - cleaned up compiler warnings
-- applied patch by varmojfekoj to FIX a bug that could cause 
+- applied patch by varmojfekoj to FIX a bug that could cause
   segfaults if empty properties were processed using modifying
   options (e.g. space-cc, drop-cc)
 - fixed man bug: rsyslogd supports -l option
@@ -13418,7 +14912,7 @@ Version 1.19.5 (rgerhards), 2007-09-07
 - changed part of the CStr interface so that better error tracking
   is provided and the calling sequence is more intuitive (there were
   invalid calls based on a too-weird interface)
-- (hopefully) fixed some remaining bugs rooted in wrong use of 
+- (hopefully) fixed some remaining bugs rooted in wrong use of
   the CStr class. These could lead to program abort.
 - applied patch by varmojfekoj two fix two potential segfault situations
 - added $ModDir config directive
@@ -13452,12 +14946,12 @@ Version 1.19.2 (mmeckelein/varmojfekoj), 2007-08-28
 - a specifically formed message caused a segfault - Many thanks varmojfekoj
   for providing a patch
 - a typo and a weird condition are fixed in msg.c - Thanks again
-  varmojfekoj 
+  varmojfekoj
 - on file creation the file was always owned by root:root. This is fixed
   now - Thanks ypsa for solving this issue
 ---------------------------------------------------------------------------
 Version 1.19.1 (mmeckelein), 2007-08-22
-- a bug that caused a high load when a TCP/UDP connection was closed is 
+- a bug that caused a high load when a TCP/UDP connection was closed is
   fixed now - Thanks mildew for solving this issue
 - fixed a bug which caused a segfault on reinit - Thx varmojfekoj for the
   patch
@@ -13649,7 +15143,7 @@ Version 1.16.0 (RGer/Peter Vrabec), 2007-07-13 - The Friday, 13th Release ;)
 ---------------------------------------------------------------------------
 Version 1.15.1 (RGer), 2007-07-10
 - fixed a bug that caused a dynaFile selector to stall when there was
-  an open error with one file 
+  an open error with one file
 - improved template processing for dynaFiles; templates are now only
   looked up during initialization - speeds up processing
 - optimized memory layout in struct filed when compiled with MySQL
@@ -13695,7 +15189,7 @@ Version 1.14.0 (RGer/Peter Vrabec), 2007-06-28
 - Peter Vrabec provided IPv6 for rsyslog, so we are now IPv6 enabled
   IPv6 Support is currently for UDP only, TCP is to come soon.
   AllowedSender configuration does not yet work for IPv6.
-- fixed code in iovCreate() that broke C's strict aliasing rules 
+- fixed code in iovCreate() that broke C's strict aliasing rules
 - fixed some char/unsigned char differences that forced the compiler
   to spit out warning messages
 - updated the Red Hat init script to fix a known issue (thanks to
@@ -13749,7 +15243,7 @@ Version 1.13.2 (RGer), 2007-06-13
 Version 1.13.1 (RGer), 2007-02-05
 - changed the listen backlog limit to a more reasonable value based on
   the maximum number of TCP connections configured (10% + 5) - thanks to Guy
-  Standen for the hint (actually, the limit was 5 and that was a 
+  Standen for the hint (actually, the limit was 5 and that was a
   left-over from early testing).
 - fixed a bug in makefile which caused DB-support to be disabled when
   NETZIP support was enabled
@@ -13757,7 +15251,7 @@ Version 1.13.1 (RGer), 2007-02-05
   hosts (effectively turns off duplicate message suppression)
 - (somewhat) improved memory consumption when compiled with MySQL support
 - looks like we fixed an incompatibility with MySQL 5.x and above software
-  At least in one case, the remote server name was destroyed, leading to 
+  At least in one case, the remote server name was destroyed, leading to
   a connection failure. The new, improved code does not have this issue and
   so we see this as solved (the new code is generally somewhat better, so
   there is a good chance we fixed this incompatibility).
@@ -13795,7 +15289,7 @@ Version 1.12.3 (RGer), 2006-10-04
 - made the field delimiter inside property replace configurable via
   template
 - fixed a bug in property replacer: if fields were used, the delimitor
-  became part of the field. Up until now, this was barely noticeable as 
+  became part of the field. Up until now, this was barely noticeable as
   the delimiter as TAB only and thus invisible to a human. With other
   delimiters available now, it quickly showed up. This bug fix might cause
   some grief to existing installations if they used the extra TAB for
@@ -13969,7 +15463,7 @@ Version 1.0.1 (RGer), 2005-09-23
 ---------------------------------------------------------------------------
 Version 1.0.0 (RGer), 2005-09-12
 - changed install doc to cover daily cron scripts - a trouble source
-- added rc script for slackware (provided by Chris Elvidge - thanks!) 
+- added rc script for slackware (provided by Chris Elvidge - thanks!)
 - fixed a really minor bug in usage() - the -r option was still
   reported as without the port parameter
 ---------------------------------------------------------------------------
@@ -14038,7 +15532,7 @@ Version 0.9.4 (RGer), 2005-07-25
   is usable in production. The code could be more sophisticated, but
   I've kept it short in anticipation of the move to liblogging, which
   will lead to the removal of the code just written ;)
-- the "exiting on signal..." message still had the "syslogd" name in 
+- the "exiting on signal..." message still had the "syslogd" name in
   it. Changed this to "rsyslogd", as we do not have a large user base
   yet, this should pose no problem.
 - fixed "the semicolon" bug. rsyslogd dumped core if a write-db action
@@ -14106,7 +15600,7 @@ Version 3.11.1 (rgerhards), 2008-02-12
   Thanks to Anders Blomdell fro bringing this to our attention
 - somewhat improved performance of string buffers
 - fixed bug that caused invalid treatment of tabs (HT) in rsyslog.conf
-- bugfix: setting for $EscapeControlCharactersOnReceive was not 
+- bugfix: setting for $EscapeControlCharactersOnReceive was not
   properly initialized
 - clarified usage of space-cc property replacer option
 - improved abort diagnostic handler
@@ -14352,7 +15846,7 @@ Version 1.19.6 (rgerhards), 2007-09-11
 - fixed a bug that in --enable-debug mode caused an assertion when the
   discard action was used
 - cleaned up compiler warnings
-- applied patch by varmojfekoj to FIX a bug that could cause 
+- applied patch by varmojfekoj to FIX a bug that could cause
   segfaults if empty properties were processed using modifying
   options (e.g. space-cc, drop-cc)
 - fixed man bug: rsyslogd supports -l option
@@ -14361,7 +15855,7 @@ Version 1.19.5 (rgerhards), 2007-09-07
 - changed part of the CStr interface so that better error tracking
   is provided and the calling sequence is more intuitive (there were
   invalid calls based on a too-weird interface)
-- (hopefully) fixed some remaining bugs rooted in wrong use of 
+- (hopefully) fixed some remaining bugs rooted in wrong use of
   the CStr class. These could lead to program abort.
 - applied patch by varmojfekoj two fix two potential segfault situations
 - added $ModDir config directive
@@ -14395,12 +15889,12 @@ Version 1.19.2 (mmeckelein/varmojfekoj), 2007-08-28
 - a specifically formed message caused a segfault - Many thanks varmojfekoj
   for providing a patch
 - a typo and a weird condition are fixed in msg.c - Thanks again
-  varmojfekoj 
+  varmojfekoj
 - on file creation the file was always owned by root:root. This is fixed
   now - Thanks ypsa for solving this issue
 ---------------------------------------------------------------------------
 Version 1.19.1 (mmeckelein), 2007-08-22
-- a bug that caused a high load when a TCP/UDP connection was closed is 
+- a bug that caused a high load when a TCP/UDP connection was closed is
   fixed now - Thanks mildew for solving this issue
 - fixed a bug which caused a segfault on reinit - Thx varmojfekoj for the
   patch
@@ -14592,7 +16086,7 @@ Version 1.16.0 (RGer/Peter Vrabec), 2007-07-13 - The Friday, 13th Release ;)
 ---------------------------------------------------------------------------
 Version 1.15.1 (RGer), 2007-07-10
 - fixed a bug that caused a dynaFile selector to stall when there was
-  an open error with one file 
+  an open error with one file
 - improved template processing for dynaFiles; templates are now only
   looked up during initialization - speeds up processing
 - optimized memory layout in struct filed when compiled with MySQL
@@ -14638,7 +16132,7 @@ Version 1.14.0 (RGer/Peter Vrabec), 2007-06-28
 - Peter Vrabec provided IPv6 for rsyslog, so we are now IPv6 enabled
   IPv6 Support is currently for UDP only, TCP is to come soon.
   AllowedSender configuration does not yet work for IPv6.
-- fixed code in iovCreate() that broke C's strict aliasing rules 
+- fixed code in iovCreate() that broke C's strict aliasing rules
 - fixed some char/unsigned char differences that forced the compiler
   to spit out warning messages
 - updated the Red Hat init script to fix a known issue (thanks to
@@ -14692,7 +16186,7 @@ Version 1.13.2 (RGer), 2007-06-13
 Version 1.13.1 (RGer), 2007-02-05
 - changed the listen backlog limit to a more reasonable value based on
   the maximum number of TCP connections configured (10% + 5) - thanks to Guy
-  Standen for the hint (actually, the limit was 5 and that was a 
+  Standen for the hint (actually, the limit was 5 and that was a
   left-over from early testing).
 - fixed a bug in makefile which caused DB-support to be disabled when
   NETZIP support was enabled
@@ -14700,7 +16194,7 @@ Version 1.13.1 (RGer), 2007-02-05
   hosts (effectively turns off duplicate message suppression)
 - (somewhat) improved memory consumption when compiled with MySQL support
 - looks like we fixed an incompatibility with MySQL 5.x and above software
-  At least in one case, the remote server name was destroyed, leading to 
+  At least in one case, the remote server name was destroyed, leading to
   a connection failure. The new, improved code does not have this issue and
   so we see this as solved (the new code is generally somewhat better, so
   there is a good chance we fixed this incompatibility).
@@ -14738,7 +16232,7 @@ Version 1.12.3 (RGer), 2006-10-04
 - made the field delimiter inside property replace configurable via
   template
 - fixed a bug in property replacer: if fields were used, the delimitor
-  became part of the field. Up until now, this was barely noticeable as 
+  became part of the field. Up until now, this was barely noticeable as
   the delimiter as TAB only and thus invisible to a human. With other
   delimiters available now, it quickly showed up. This bug fix might cause
   some grief to existing installations if they used the extra TAB for
@@ -14912,7 +16406,7 @@ Version 1.0.1 (RGer), 2005-09-23
 ---------------------------------------------------------------------------
 Version 1.0.0 (RGer), 2005-09-12
 - changed install doc to cover daily cron scripts - a trouble source
-- added rc script for slackware (provided by Chris Elvidge - thanks!) 
+- added rc script for slackware (provided by Chris Elvidge - thanks!)
 - fixed a really minor bug in usage() - the -r option was still
   reported as without the port parameter
 ---------------------------------------------------------------------------
@@ -14981,7 +16475,7 @@ Version 0.9.4 (RGer), 2005-07-25
   is usable in production. The code could be more sophisticated, but
   I've kept it short in anticipation of the move to liblogging, which
   will lead to the removal of the code just written ;)
-- the "exiting on signal..." message still had the "syslogd" name in 
+- the "exiting on signal..." message still had the "syslogd" name in
   it. Changed this to "rsyslogd", as we do not have a large user base
   yet, this should pose no problem.
 - fixed "the semicolon" bug. rsyslogd dumped core if a write-db action
@@ -15049,7 +16543,7 @@ Version 3.11.1 (rgerhards), 2008-02-12
   Thanks to Anders Blomdell fro bringing this to our attention
 - somewhat improved performance of string buffers
 - fixed bug that caused invalid treatment of tabs (HT) in rsyslog.conf
-- bugfix: setting for $EscapeControlCharactersOnReceive was not 
+- bugfix: setting for $EscapeControlCharactersOnReceive was not
   properly initialized
 - clarified usage of space-cc property replacer option
 - improved abort diagnostic handler
@@ -15295,7 +16789,7 @@ Version 1.19.6 (rgerhards), 2007-09-11
 - fixed a bug that in --enable-debug mode caused an assertion when the
   discard action was used
 - cleaned up compiler warnings
-- applied patch by varmojfekoj to FIX a bug that could cause 
+- applied patch by varmojfekoj to FIX a bug that could cause
   segfaults if empty properties were processed using modifying
   options (e.g. space-cc, drop-cc)
 - fixed man bug: rsyslogd supports -l option
@@ -15304,7 +16798,7 @@ Version 1.19.5 (rgerhards), 2007-09-07
 - changed part of the CStr interface so that better error tracking
   is provided and the calling sequence is more intuitive (there were
   invalid calls based on a too-weird interface)
-- (hopefully) fixed some remaining bugs rooted in wrong use of 
+- (hopefully) fixed some remaining bugs rooted in wrong use of
   the CStr class. These could lead to program abort.
 - applied patch by varmojfekoj two fix two potential segfault situations
 - added $ModDir config directive
@@ -15338,12 +16832,12 @@ Version 1.19.2 (mmeckelein/varmojfekoj), 2007-08-28
 - a specifically formed message caused a segfault - Many thanks varmojfekoj
   for providing a patch
 - a typo and a weird condition are fixed in msg.c - Thanks again
-  varmojfekoj 
+  varmojfekoj
 - on file creation the file was always owned by root:root. This is fixed
   now - Thanks ypsa for solving this issue
 ---------------------------------------------------------------------------
 Version 1.19.1 (mmeckelein), 2007-08-22
-- a bug that caused a high load when a TCP/UDP connection was closed is 
+- a bug that caused a high load when a TCP/UDP connection was closed is
   fixed now - Thanks mildew for solving this issue
 - fixed a bug which caused a segfault on reinit - Thx varmojfekoj for the
   patch
@@ -15535,7 +17029,7 @@ Version 1.16.0 (RGer/Peter Vrabec), 2007-07-13 - The Friday, 13th Release ;)
 ---------------------------------------------------------------------------
 Version 1.15.1 (RGer), 2007-07-10
 - fixed a bug that caused a dynaFile selector to stall when there was
-  an open error with one file 
+  an open error with one file
 - improved template processing for dynaFiles; templates are now only
   looked up during initialization - speeds up processing
 - optimized memory layout in struct filed when compiled with MySQL
@@ -15581,7 +17075,7 @@ Version 1.14.0 (RGer/Peter Vrabec), 2007-06-28
 - Peter Vrabec provided IPv6 for rsyslog, so we are now IPv6 enabled
   IPv6 Support is currently for UDP only, TCP is to come soon.
   AllowedSender configuration does not yet work for IPv6.
-- fixed code in iovCreate() that broke C's strict aliasing rules 
+- fixed code in iovCreate() that broke C's strict aliasing rules
 - fixed some char/unsigned char differences that forced the compiler
   to spit out warning messages
 - updated the Red Hat init script to fix a known issue (thanks to
@@ -15635,7 +17129,7 @@ Version 1.13.2 (RGer), 2007-06-13
 Version 1.13.1 (RGer), 2007-02-05
 - changed the listen backlog limit to a more reasonable value based on
   the maximum number of TCP connections configured (10% + 5) - thanks to Guy
-  Standen for the hint (actually, the limit was 5 and that was a 
+  Standen for the hint (actually, the limit was 5 and that was a
   left-over from early testing).
 - fixed a bug in makefile which caused DB-support to be disabled when
   NETZIP support was enabled
@@ -15643,7 +17137,7 @@ Version 1.13.1 (RGer), 2007-02-05
   hosts (effectively turns off duplicate message suppression)
 - (somewhat) improved memory consumption when compiled with MySQL support
 - looks like we fixed an incompatibility with MySQL 5.x and above software
-  At least in one case, the remote server name was destroyed, leading to 
+  At least in one case, the remote server name was destroyed, leading to
   a connection failure. The new, improved code does not have this issue and
   so we see this as solved (the new code is generally somewhat better, so
   there is a good chance we fixed this incompatibility).
@@ -15681,7 +17175,7 @@ Version 1.12.3 (RGer), 2006-10-04
 - made the field delimiter inside property replace configurable via
   template
 - fixed a bug in property replacer: if fields were used, the delimitor
-  became part of the field. Up until now, this was barely noticeable as 
+  became part of the field. Up until now, this was barely noticeable as
   the delimiter as TAB only and thus invisible to a human. With other
   delimiters available now, it quickly showed up. This bug fix might cause
   some grief to existing installations if they used the extra TAB for
@@ -15855,7 +17349,7 @@ Version 1.0.1 (RGer), 2005-09-23
 ---------------------------------------------------------------------------
 Version 1.0.0 (RGer), 2005-09-12
 - changed install doc to cover daily cron scripts - a trouble source
-- added rc script for slackware (provided by Chris Elvidge - thanks!) 
+- added rc script for slackware (provided by Chris Elvidge - thanks!)
 - fixed a really minor bug in usage() - the -r option was still
   reported as without the port parameter
 ---------------------------------------------------------------------------
@@ -15924,7 +17418,7 @@ Version 0.9.4 (RGer), 2005-07-25
   is usable in production. The code could be more sophisticated, but
   I've kept it short in anticipation of the move to liblogging, which
   will lead to the removal of the code just written ;)
-- the "exiting on signal..." message still had the "syslogd" name in 
+- the "exiting on signal..." message still had the "syslogd" name in
   it. Changed this to "rsyslogd", as we do not have a large user base
   yet, this should pose no problem.
 - fixed "the semicolon" bug. rsyslogd dumped core if a write-db action
@@ -15994,7 +17488,7 @@ Version 0.9.0 (RGer)
   and/or emergency log. Previously, they were only seen if the
   -d (debug) option was present on the command line.
 - fixed the "2gb file issue on 32bit systems". If a file grew to
-  more than 2gb, the syslogd was aborted with "file size exceeded". 
+  more than 2gb, the syslogd was aborted with "file size exceeded".
   Now, defines have been added according to
   http://www.daimi.au.dk/~kasperd/comp.os.linux.development.faq.html#LARGEFILE
   Testing revealed that they work ;)

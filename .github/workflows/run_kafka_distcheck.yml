@@ -1,4 +1,4 @@
-# Copyright 2020 Rainer Gerhards and Others
+# Copyright 2020-2025 Rainer Gerhards and Others
 #
 # https://github.com/rsyslog/rsyslog-pkg-ubuntu
 #
@@ -26,6 +26,23 @@ name: check kafka distcheck
 
 on:
   pull_request:
+    paths:
+      - 'Makefile.am'
+      - 'runtime/Makefile.am'
+      - 'pluginsg/imkafka/Makefile.am'
+      - 'pluginsg/omkafka/Makefile.am'
+      - '*.[ch]'
+      - 'runtime/*.[ch]'
+      - 'plugins/imkafka/*.[ch]'
+      - 'plugins/omkafka/*.[ch]'
+      - 'tests/*kafka*.sh'
+      - 'diag.sh'
+      - 'configure.ac'
+      - '.github/workflows/*.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check_run:
@@ -34,7 +51,7 @@ jobs:
 
     steps:
       - name: git checkout project
-        uses: actions/checkout@v1
+        uses: actions/checkout@v4
 
       - name: run container CI pipeline
         run: |
@@ -43,6 +60,7 @@ jobs:
                  --enable-imdiag --disable-impstats --enable-imfile --disable-imfile-tests \
                  --disable-fmhttp --enable-valgrind --enable-valgrind-testbench \
                  --disable-helgrind --disable-default-tests --enable-kafka-tests \
+                 --disable-default-tests \
                  --enable-omkafka --enable-gnutls --disable-gnutls-tests --enable-imkafka"
           export RSYSLOG_CONTAINER_UID="" # use default
           export RSYSLOG_STATSURL='http://build.rsyslog.com/testbench-failedtest.php'
@@ -54,6 +72,7 @@ jobs:
           export CI_CHECK_CMD='distcheck'
           export RSYSLOG_DEV_CONTAINER='rsyslog/rsyslog_dev_base_ubuntu:20.04'
           export ABORT_ALL_ON_TEST_FAIL='YES'
+          export VERBOSE=1
           devtools/devcontainer.sh --rm devtools/run-ci.sh
 
       - name: show error logs (if we errored)

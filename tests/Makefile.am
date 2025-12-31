@@ -62,11 +62,9 @@ TESTS +=  \
 	es-duplicated-ruleset.sh
 # the following test need to be serialized:
 TESTS +=  \
-	es-basic-es6.0.sh \
 	es-basic-es7.14.sh \
 	es-basic.sh \
 	es-basic-bulk.sh
-es-basic-es7.14.log: es-basic-es6.0.log
 es-basic.log: es-basic-es7.14.log
 es-basic-bulk.log: es-basic.log
 es-basic-server.log: es-basic-bulk.log
@@ -104,7 +102,6 @@ TESTS +=  \
 	es-basic-errfile-popul.sh \
 	es-bulk-errfile-empty.sh \
 	es-bulk-errfile-popul.sh \
-	es-searchType-empty.sh \
 	diskqueue-multithread-es.sh \
 	es-writeoperation.sh
 
@@ -115,8 +112,7 @@ es-basic-errfile-empty.log: es-maxbytes-bulk.log
 es-basic-errfile-popul.log: es-basic-errfile-empty.log
 es-bulk-errfile-empty.log: es-basic-errfile-popul.log
 es-bulk-errfile-popul.log: es-bulk-errfile-empty.log
-es-searchType-empty.log: es-bulk-errfile-popul.log
-diskqueue-multithread-es.log: es-searchType-empty.log
+diskqueue-multithread-es.log: es-bulk-errfile-popul.log
 es-writeoperation.log: diskqueue-multithread-es.log
 elasticsearch-stop.log: es-writeoperation.log
 
@@ -190,6 +186,7 @@ TESTS +=  \
 	func-substring-relative-endpos.sh \
 	hostname-with-slash-dflt-slash-valid.sh \
 	empty-app-name.sh \
+	endswith-basic.sh \
 	stop-localvar.sh \
 	stop-msgvar.sh \
 	glbl-ruleset-queue-defaults.sh \
@@ -207,8 +204,17 @@ TESTS +=  \
 	nested-call-shutdown.sh \
 	dnscache-TTL-0.sh \
 	invalid_nested_include.sh \
+	omfwd-lb-1target-retry-full_buf.sh \
+	omfwd-lb-1target-retry-1_byte_buf.sh \
+	omfwd-lb-1target-retry-1_byte_buf-TargetFail.sh \
+	omfwd-lb-susp.sh \
+	omfwd-lb-2target-basic.sh \
+	omfwd-lb-2target-retry.sh \
+	omfwd-lb-2target-one_fail.sh \
 	omfwd-tls-invalid-permitExpiredCerts.sh \
 	omfwd-keepalive.sh \
+	omfwd-subtree-tpl.sh \
+	omfile-subtree-jsonf.sh \
 	omusrmsg-errmsg-no-params.sh \
 	omusrmsg-noabort.sh \
 	omfile-module-params.sh \
@@ -233,9 +239,10 @@ TESTS +=  \
 	privdropabortonidfail.sh \
 	privdropabortonidfaillegacy.sh \
 	json-nonstring.sh \
-        json-onempty-at-end.sh \
+	json-onempty-at-end.sh \
 	template-json.sh \
-	template-pure-json.sh \
+        template-pure-json.sh \
+        template-jsonf-nested.sh \
 	template-pos-from-to.sh \
 	template-pos-from-to-lowercase.sh \
 	template-pos-from-to-oversize.sh \
@@ -265,6 +272,8 @@ TESTS +=  \
 	pmrfc3164-AtSignsInHostname_off.sh \
 	pmrfc3164-tagEndingByColon.sh \
 	pmrfc3164-defaultTag.sh \
+	pmrfc3164-headerless.sh \
+	pmrfc3164-drop.sh \
 	pmrfc3164-json.sh \
 	tcp_forwarding_tpl.sh \
 	tcp_forwarding_dflt_tpl.sh \
@@ -290,17 +299,6 @@ TESTS +=  \
 	allowed-sender-tcp-hostname-ok.sh \
 	allowed-sender-tcp-hostname-fail.sh \
 	imtcp-discard-truncated-msg.sh \
-	imtcp-basic.sh \
-	imtcp-basic-hup.sh \
-	imtcp-maxFrameSize.sh \
-	imtcp-msg-truncation-on-number.sh \
-	imtcp-msg-truncation-on-number2.sh \
-	imtcp-NUL.sh \
-	imtcp-NUL-rawmsg.sh \
-	imtcp_incomplete_frame_at_end.sh \
-	imtcp-multiport.sh \
-	imtcp-bigmessage-octetcounting.sh \
-	imtcp-bigmessage-octetstuffing.sh \
 	da-queue-persist.sh \
 	daqueue-persist.sh \
 	daqueue-invld-qi.sh \
@@ -316,12 +314,6 @@ TESTS +=  \
 	manytcp.sh \
 	rsf_getenv.sh \
 	msg-deadlock-headerless-noappname.sh \
-	imtcp_conndrop.sh \
-	imtcp_addtlframedelim.sh \
-	imtcp_no_octet_counted.sh \
-	imtcp_addtlframedelim_on_input.sh \
-	imtcp_spframingfix.sh \
-	imtcp-connection-msg-recieved.sh \
 	sndrcv.sh \
 	sndrcv_failover.sh \
 	sndrcv_gzip.sh \
@@ -399,6 +391,7 @@ TESTS +=  \
 	suspend-omfwd-via-file.sh \
 	externalstate-failed-rcvr.sh \
 	rcvr_fail_restore.sh \
+	rscript_b64_decode.sh \
 	rscript_contains.sh \
 	rscript_bare_var_root.sh \
 	rscript_bare_var_root-empty.sh \
@@ -450,6 +443,7 @@ TESTS +=  \
 	rscript_int2Hex.sh \
 	rscript_trim.sh \
 	rscript_substring.sh \
+	rscript_toupper.sh \
 	rscript_format_time.sh \
 	rscript_parse_time.sh \
 	rscript_is_time.sh \
@@ -506,14 +500,48 @@ TESTS +=  \
 	parsertest-parse-nodate.sh \
 	parsertest-parse-nodate-udp.sh \
 	parsertest-snare_ccoff_udp.sh \
-	parsertest-snare_ccoff_udp2.sh
+    parsertest-snare_ccoff_udp2.sh
+
+if ENABLE_MMSNAREPARSE
+TESTS += \
+	mmsnareparse-basic.sh \
+	mmsnareparse-json.sh \
+	mmsnareparse-syslog.sh \
+	mmsnareparse-comprehensive.sh \
+	mmsnareparse-value-types.sh \
+	mmsnareparse-enhanced-validation.sh \
+	mmsnareparse-sysmon.sh \
+	mmsnareparse-kerberos.sh \
+	mmsnareparse-custom.sh \
+	mmsnareparse-realworld-4624-4634-5140.sh \
+	mmsnareparse-trailing-extradata.sh \
+	mmsnareparse-trailing-extradata-regex.sh
+if HAVE_VALGRIND
+TESTS += \
+	mmsnareparse-comprehensive-vg.sh
+endif
+endif
+
+if ENABLE_OMSENDERTRACK
+TESTS += \
+        omsendertrack-basic.sh
+TESTS += \
+	omsendertrack-statefile.sh
+if HAVE_VALGRIND
+TESTS += \
+	omsendertrack-basic-vg.sh
+TESTS += \
+	omsendertrack-statefile-vg.sh
+endif # if HAVE_VALGRIND
+endif
+
 
 if ENABLE_LIBZSTD
 TESTS +=  \
-	zstd.sh
+        zstd.sh
 if HAVE_VALGRIND
 TESTS +=  \
-	zstd-vg.sh
+        zstd-vg.sh
 endif # if HAVE_VALGRIND
 endif
 
@@ -525,20 +553,31 @@ TESTS +=  \
 	queue-encryption-da.sh
 endif # ENABLE_LIBGCRYPT
 if HAVE_VALGRIND
+# note if the same test is added multiple times, it still is only executed once!
+if ENABLE_GNUTLS_TESTS
+TESTS +=  \
+	tcpflood_wrong_option_output.sh
+endif # ENABLE_GNUTLS_TESTS
+if ENABLE_OPENSSL
+TESTS +=  \
+	tcpflood_wrong_option_output.sh
+endif # ENABLE_OPENSSL
 TESTS +=  \
 	omusrmsg-noabort-vg.sh \
 	omfile_hup-vg.sh \
 	gzipwr_hup-vg.sh \
-	tcpflood_wrong_option_output.sh \
 	imtcp-octet-framing-too-long-vg.sh \
 	smtradfile-vg.sh \
 	dnscache-TTL-0-vg.sh \
 	include-obj-outside-control-flow-vg.sh \
 	include-obj-in-if-vg.sh \
 	include-obj-text-vg.sh \
+	rscript_b64_decode-vg.sh \
 	rscript_parse_json-vg.sh \
 	rscript_backticks-vg.sh \
-	rscript_backticks_empty_envvar-vg.sh \
+	rscript_backticks_empty_envvar.sh \
+	rscript_backticks_static_text.sh \
+	rscript_backticks_braces_envvar.sh \
 	rscript-config_enable-off-vg.sh \
 	rscript_get_property-vg.sh \
 	prop-jsonmesg-vg.sh \
@@ -591,6 +630,59 @@ endif # ENABLE_LIBGCRYPT
 endif # HAVE_VALGRIND
 endif # ENABLE_DEFAULT_TESTS
 
+
+
+if ENABLE_IMTCP_TESTS
+TESTS +=  \
+	fromhost-port.sh \
+	fromhost-port-tuple.sh \
+	fromhost-port-async-ruleset.sh \
+	allowed-sender-tcp-ok.sh \
+	allowed-sender-tcp-fail.sh \
+	allowed-sender-tcp-hostname-ok.sh \
+	allowed-sender-tcp-hostname-fail.sh \
+	imtcp-discard-truncated-msg.sh \
+	imtcp-basic.sh \
+	imtcp-basic-hup.sh \
+	imtcp-impstats-single-thread.sh \
+	imtcp-starvation-0.sh \
+	imtcp-starvation-1.sh \
+	imtcp-maxFrameSize.sh \
+	imtcp-msg-truncation-on-number.sh \
+	imtcp-msg-truncation-on-number2.sh \
+	imtcp-netns.sh \
+	imtcp-NUL.sh \
+	imtcp-NUL-rawmsg.sh \
+	imtcp_incomplete_frame_at_end.sh \
+	imtcp-multiport.sh \
+	imtcp-bigmessage-octetcounting.sh \
+	imtcp-bigmessage-octetstuffing.sh \
+	manytcp.sh \
+	imtcp_conndrop.sh \
+	imtcp_addtlframedelim.sh \
+	imtcp_no_octet_counted.sh \
+	imtcp_addtlframedelim_on_input.sh \
+	imtcp_spframingfix.sh \
+	imtcp-connection-msg-recieved.sh \
+	sndrcv.sh \
+	sndrcv_failover.sh \
+	sndrcv_gzip.sh \
+	sndrcv_udp_nonstdpt.sh \
+	sndrcv_udp_nonstdpt_v6.sh \
+	sndrcv_udp_nonstdpt_v6.sh
+
+if HAVE_VALGRIND
+TESTS +=  \
+	imtcp-octet-framing-too-long-vg.sh
+endif # HAVE_VALGRIND
+if ENABLE_IMTCP_EPOLL
+if ENABLE_IMPSTATS
+TESTS +=  \
+	imtcp-impstats.sh
+endif # ENABLE_IMPSTATS
+endif # ENABLE_IMTCP_EPOLL
+endif # ENABLE_IMTCP_TESTS
+
 if ENABLE_SNMP
 TESTS +=  \
 	omsnmp_errmsg_no_params.sh
@@ -604,8 +696,14 @@ endif # if ENABLE_SNMP
 
 if ENABLE_MMUTF8FIX
 TESTS +=  \
-	mmutf8fix_no_error.sh
+        mmutf8fix_no_error.sh
 endif # if ENABLE_MAIL
+
+if ENABLE_MMAITAG
+TESTS +=  \
+        mmaitag-basic.sh \
+        mmaitag-invalid-key.sh
+endif
 
 if ENABLE_MAIL
 TESTS +=  \
@@ -832,6 +930,20 @@ TESTS +=  \
 endif
 endif
 
+# see comments in configure.ac on flaky tests for important details!!!
+if ENABLE_FLAKY_TESTS
+#TESTS +=
+#
+if ENABLE_OMHTTP
+TESTS +=  \
+	omhttp-batch-retry-metadata.sh
+if HAVE_VALGRIND
+TESTS +=  \
+	omhttp-batch-retry-metadata-vg.sh
+endif # end if HAVE_VALGRIND
+endif # end if ENABLE_OMHTTP
+endif # end if ENABLE_FLAKY_TESTS
+
 if ENABLE_JOURNAL_TESTS
 if ENABLE_IMJOURNAL
 TESTS +=  \
@@ -919,9 +1031,9 @@ TESTS +=  \
 	omhttp-batch-jsonarray.sh \
 	omhttp-batch-kafkarest-retry.sh \
 	omhttp-batch-kafkarest.sh \
-	omhttp-batch-retry-metadata.sh \
 	omhttp-batch-lokirest-retry.sh \
 	omhttp-batch-lokirest.sh \
+	omhttp-profile-loki.sh \
 	omhttp-batch-newline.sh \
 	omhttp-retry.sh \
 	omhttp-retry-timeout.sh \
@@ -938,7 +1050,6 @@ TESTS +=  \
 	omhttp-batch-jsonarray-retry-vg.sh \
 	omhttp-batch-jsonarray-vg.sh \
 	omhttp-batch-kafkarest-retry-vg.sh \
-	omhttp-batch-retry-metadata-vg.sh \
 	omhttp-batch-lokirest-retry-vg.sh \
 	omhttp-retry-vg.sh \
 	omhttp-retry-timeout-vg.sh \
@@ -953,6 +1064,7 @@ TESTS += \
 	kafka-selftest.sh \
 	omkafka.sh \
 	omkafkadynakey.sh \
+	omkafka-headers.sh \
 	imkafka.sh \
 	imkafka-backgrounded.sh \
 	imkafka-config-err-ruleset.sh \
@@ -980,13 +1092,14 @@ sndrcv_kafka.log: imkafka_multi_single.log
 imkafka_multi_group.log: sndrcv_kafka.log
 sndrcv_kafka_multi_topics.log: imkafka_multi_group.log
 omkafkadynakey.log: sndrcv_kafka_multi_topics.log
+omkafka-headers.log: omkafkadynakey.log
 
 if HAVE_VALGRIND
 TESTS += \
 	omkafka-vg.sh \
 	imkafka-vg.sh
 
-omkafka-vg.log: sndrcv_kafka_multi_topics.log
+omkafka-vg.log: omkafka-headers.log
 imkafka-vg.log: omkafka-vg.log
 endif
 endif
@@ -997,6 +1110,7 @@ if ENABLE_OMAZUREEVENTHUBS
 if ENABLE_OMAZUREEVENTHUBS_TESTS
 TESTS += \
 	omazureeventhubs-basic.sh \
+	omazureeventhubs-basic-url.sh \
 	omazureeventhubs-list.sh \
 	omazureeventhubs-stress.sh \
 	omazureeventhubs-interrupt.sh
@@ -1012,12 +1126,14 @@ if ENABLE_IMDOCKER
 if ENABLE_IMDOCKER_TESTS
 TESTS += \
 	imdocker-basic.sh \
+	imdocker-image-name.sh \
 	imdocker-long-logline.sh \
 	imdocker-new-logs-from-start.sh \
 	imdocker-multi-line.sh
 if HAVE_VALGRIND
 TESTS +=  \
 	imdocker-basic-vg.sh \
+	imdocker-image-name-vg.sh \
 	imdocker-long-logline-vg.sh \
 	imdocker-new-logs-from-start-vg.sh \
 	imdocker-multi-line-vg.sh
@@ -1034,7 +1150,9 @@ TESTS += \
 	imhttp-post-payload-multi.sh \
 	imhttp-post-payload-multi-lf.sh \
 	imhttp-post-payload-compress.sh \
-	imhttp-getrequest-file.sh
+	imhttp-getrequest-file.sh \
+	imhttp-healthcheck.sh \
+	imhttp-metrics.sh
 if HAVE_VALGRIND
 TESTS +=  \
 	imhttp-post-payload-vg.sh \
@@ -1157,11 +1275,13 @@ TESTS +=  \
 	no-dynstats-json.sh \
 	no-dynstats.sh \
 	stats-json.sh \
+	stats-prometheus.sh \
 	dynstats-json.sh \
 	stats-cee.sh \
 	stats-json-es.sh \
 	dynstats_reset_without_pstats_reset.sh \
 	dynstats_prevent_premature_eviction.sh \
+	omfwd-lb-2target-impstats.sh \
 	omfwd_fast_imuxsock.sh \
 	omfwd_impstats-udp.sh \
 	omfwd_impstats-tcp.sh
@@ -1278,6 +1398,11 @@ endif # HAVE_VALGRIND
 endif # ENABLE_FFAUP
 endif
 
+if ENABLE_FMPCRE
+TESTS +=  \
+	ffmpcre-basic.sh
+endif
+
 if ENABLE_MMPSTRUCDATA
 TESTS +=  \
 	mmpstrucdata.sh \
@@ -1327,10 +1452,10 @@ endif
 
 if ENABLE_MMNORMALIZE
 TESTS += msgvar-concurrency-array.sh \
-	msgvar-concurrency-array-event.tags.sh \
-	mmnormalize_rule_from_string.sh \
-	mmnormalize_rule_from_array.sh \
-	mmnormalize_parsesuccess.sh
+        msgvar-concurrency-array-event.tags.sh \
+        mmnormalize_rule_from_string.sh \
+        mmnormalize_rule_from_array.sh \
+        mmnormalize_parsesuccess.sh
 
 if HAVE_VALGRIND
 TESTS += \
@@ -1351,10 +1476,23 @@ TESTS += \
 endif
 endif # ENABLE_MMNORMALIZE
 
+if ENABLE_MMLEEFPARSE
+if ENABLE_IMPTCP
+TESTS += \
+	mmleefparse_basic.sh
+endif
+endif
+
 if ENABLE_MMJSONPARSE
 TESTS += \
-	mmjsonparse-w-o-cookie.sh \
-	mmjsonparse-w-o-cookie-multi-spaces.sh
+        mmjsonparse-w-o-cookie.sh \
+        mmjsonparse-w-o-cookie-multi-spaces.sh \
+        mmjsonparse-find-json-basic.sh \
+        mmjsonparse-find-json-trailing.sh \
+        mmjsonparse-find-json-scan-limit.sh \
+        mmjsonparse-find-json-invalid.sh \
+        mmjsonparse-find-json-invalid-mode.sh \
+        mmjsonparse-find-json-parser-validation.sh
 if ENABLE_IMPSTATS
 TESTS += \
 	mmjsonparse-invalid-containerName.sh \
@@ -1366,6 +1504,7 @@ TESTS +=  \
 	imptcp-oversize-message-display.sh \
 	imptcp-msg-truncation-on-number.sh \
 	imptcp-msg-truncation-on-number2.sh \
+	imtcp-netns.sh \
 	imptcp-maxFrameSize-parameter.sh \
 	mmjsonparse_cim.sh \
 	mmjsonparse_cim2.sh \
@@ -1388,8 +1527,15 @@ TESTS +=  \
 	stop_when_array_has_element.sh \
 	json_null_array.sh \
 	json_null.sh \
-	json_var_cmpr.sh \
-	json_var_case.sh
+        json_var_cmpr.sh \
+        json_var_case.sh
+endif
+
+if ENABLE_MMJSONTRANSFORM
+if ENABLE_IMTCP_TESTS
+TESTS += \
+        mmjsontransform-basic.sh
+endif
 endif
 
 if ENABLE_MMDBLOOKUP
@@ -1412,6 +1558,7 @@ TESTS +=  \
 	imtcp-tls-input-2certs.sh \
 	imtcp-tls-basic-verifydepth.sh \
 	imtcp_conndrop_tls.sh \
+	imtcp-tls-gibberish.sh \
 	sndrcv_tls_anon_rebind.sh \
 	sndrcv_tls_anon_hostname.sh \
 	sndrcv_tls_anon_ipv4.sh \
@@ -1448,6 +1595,45 @@ TESTS +=  \
 endif
 endif
 
+if ENABLE_MBEDTLS
+TESTS +=  \
+	imtcp-multi-drvr-basic-ptcp_gtls_mbedtls.sh \
+	imtcp-tls-mbedtls-basic.sh \
+	imtcp-tls-mbedtls-basic-verifydepth.sh \
+	imtcp-tls-mbedtls-error-ca.sh \
+	imtcp-tls-mbedtls-error-cert.sh \
+	imtcp-tls-mbedtls-error-key2.sh \
+	imtcp-tls-mbedtls-error-key.sh \
+	imtcp-tls-mbedtls-input-basic.sh \
+	imtcp-tls-mbedtls-x509invalid.sh \
+	imtcp-tls-mbedtls-x509name_invalid.sh \
+	imtcp-tls-mbedtls-x509name.sh \
+	imtcp-tls-mbedtls-x509valid.sh \
+	imtcp-tls-mbedtls-x509fingerprint-invld.sh \
+	imtcp-tls-mbedtls-x509fingerprint.sh \
+	imtcp-tls-mbedtls-x509name-multi-wildcard.sh \
+	sndrcv_tls_certless_clientonly_mbedtls.sh \
+	sndrcv_tls_gtls_serveranon_mbedtls_clientanon.sh \
+	sndrcv_tls_gtls_servercert_mbedtls_clientanon.sh \
+	sndrcv_tls_mbedtls_certvalid_action_level.sh \
+	sndrcv_tls_mbedtls_certvalid_expired.sh \
+	sndrcv_tls_mbedtls_certvalid_revoked.sh \
+	sndrcv_tls_mbedtls_certvalid.sh \
+	sndrcv_tls_mbedtls_servercert_clientcert.sh \
+	sndrcv_tls_mbedtls_servercert_mbedtls_clientanon.sh \
+	sndrcv_tls_servercert_mbedtls_clientanon.sh \
+	sndrcv_tls_mbedtls_certvalid_expired_autrzd.sh \
+	sndrcv_tls_mbedtls_gnutlspriorityString_no_suite_in_common.sh \
+	sndrcv_tls_mbedtls_gnutlspriorityString_suite_in_common.sh \
+	sndrcv_tls_servercert_bad_eku_chk_mbedtls_clientanon.sh \
+	sndrcv_tls_servercert_bad_eku_no_chk_mbedtls_clientanon.sh
+if HAVE_VALGRIND
+TESTS += \
+	imtcp-tls-mbedtls-basic-vg.sh \
+	imtcp-tls-mbedtls-basic-brokenhandshake-vg.sh
+endif
+endif
+
 if ENABLE_OPENSSL
 TESTS +=  \
 	imtcp-tls-ossl-basic.sh \
@@ -1468,6 +1654,7 @@ TESTS +=  \
 	sndrcv_tls_ossl_certvalid_tlscommand.sh \
 	sndrcv_tls_ossl_certvalid_ciphers.sh \
 	sndrcv_tls_ossl_certvalid_revoked.sh \
+	sndrcv_tls_ossl_intermediate_ca_chain.sh \
 	imtcp-tls-ossl-x509valid.sh \
 	imtcp-tls-ossl-x509name.sh \
 	imtcp-tls-ossl-x509fingerprint.sh \
@@ -1494,7 +1681,15 @@ endif
 endif
 
 if ENABLE_OMUXSOCK
-TESTS += uxsock_simple.sh
+TESTS += uxsock_simple.sh \
+	 uxsock_simple_abstract.sh \
+	 uxsock_multiple.sh \
+	 uxsock_multiple_netns.sh
+if HAVE_VALGRIND
+TESTS += uxsock_simple_abstract-vg.sh \
+	 uxsock_multiple-vg.sh \
+	 uxsock_multiple_netns-vg.sh
+endif # HAVE_VALGRIND
 endif
 
 if ENABLE_RELP
@@ -1700,6 +1895,7 @@ TESTS += \
 	imfile-logrotate-multiple.sh \
 	imfile-logrotate-copytruncate.sh \
 	imfile-logrotate-nocopytruncate.sh \
+	imfile-logrotate-state-files.sh \
 	imfile-growing-file-id.sh \
 	imfile-ignore-old-file-1.sh \
 	imfile-ignore-old-file-2.sh \
@@ -1847,6 +2043,7 @@ EXTRA_DIST= \
 	config_enabled-off.sh \
 	empty-app-name.sh \
 	empty-hostname.sh \
+	endswith-basic.sh \
 	func-substring-invld-startpos.sh \
 	func-substring-invld-startpos-vg.sh \
 	func-substring-large-endpos.sh \
@@ -1860,6 +2057,8 @@ EXTRA_DIST= \
 	pmrfc3164-tagEndingByColon.sh \
 	pmrfc3164-defaultTag.sh \
 	pmrfc3164-json.sh \
+	pmrfc3164-headerless.sh \
+	pmrfc3164-drop.sh \
 	hostname-with-slash-dflt-invld.sh \
 	hostname-with-slash-dflt-slash-valid.sh \
 	glbl-umask.sh \
@@ -1893,10 +2092,24 @@ EXTRA_DIST= \
 	imbatchreport_delete_toolarge.sh \
 	imbatchreport_rename_toolarge.sh \
 	imbatchreport_errmsg_no_params-vg.sh \
-	mmexternal-SegFault.sh \
-	mmexternal-SegFault-empty-jroot-vg.sh \
-	testsuites/mmexternal-SegFault-mm-python.py \
-	mmexternal-InvldProg-vg.sh \
+        mmexternal-SegFault.sh \
+        mmexternal-SegFault-empty-jroot-vg.sh \
+        testsuites/mmexternal-SegFault-mm-python.py \
+        testsuites/mmsnareparse/sample-custom-pattern.data \
+        mmsnareparse-basic.sh \
+        mmsnareparse-comprehensive.sh \
+        mmsnareparse-comprehensive-vg.sh \
+        mmsnareparse-custom.sh \
+        mmsnareparse-enhanced-validation.sh \
+        mmsnareparse-json.sh \
+        mmsnareparse-sysmon.sh \
+        mmsnareparse-kerberos.sh \
+        mmsnareparse-realworld-4624-4634-5140.sh \
+        mmsnareparse-syslog.sh \
+        mmsnareparse-value-types.sh \
+        mmsnareparse-trailing-extradata.sh \
+        mmsnareparse-trailing-extradata-regex.sh \
+        mmexternal-InvldProg-vg.sh \
 	nested-call-shutdown.sh \
 	1.rstest 2.rstest 3.rstest err1.rstest \
 	config_multiple_include.sh \
@@ -2008,6 +2221,8 @@ EXTRA_DIST= \
 	rscript_http_request-vg.sh \
 	rscript_bare_var_root.sh \
 	rscript_bare_var_root-empty.sh \
+	rscript_b64_decode.sh \
+	rscript_b64_decode-vg.sh \
 	rscript_contains.sh \
 	rscript_ipv42num.sh \
 	rscript_field.sh \
@@ -2051,6 +2266,7 @@ EXTRA_DIST= \
 	rscript_int2Hex.sh \
 	rscript_trim.sh \
 	rscript_substring.sh \
+	rscript_toupper.sh \
 	rscript_format_time.sh \
 	rscript_parse_time.sh \
 	rscript_parse_time_get-ts.py \
@@ -2059,7 +2275,9 @@ EXTRA_DIST= \
 	rscript_parse_json.sh \
 	rscript_parse_json-vg.sh \
 	rscript_backticks-vg.sh \
-	rscript_backticks_empty_envvar-vg.sh \
+	rscript_backticks_empty_envvar.sh \
+	rscript_backticks_static_text.sh \
+	rscript_backticks_braces_envvar.sh \
 	rscript_previous_action_suspended.sh \
 	rscript_str2num_negative.sh \
 	rscript_exists-yes.sh \
@@ -2135,10 +2353,27 @@ EXTRA_DIST= \
 	rscript_set_modify.sh \
 	stop-localvar.sh \
 	stop-msgvar.sh \
-	omfwd-tls-invalid-permitExpiredCerts.sh \
-	omfwd-keepalive.sh \
-	omfwd_fast_imuxsock.sh \
-	omfile_hup-vg.sh \
+	omfwd-lb-1target-retry-full_buf.sh \
+	omfwd-lb-1target-retry-1_byte_buf.sh \
+	omfwd-lb-1target-retry-test_skeleton.sh \
+	omfwd-lb-1target-retry-1_byte_buf-TargetFail.sh \
+	omfwd-lb-1target-retry-test_skeleton-TargetFail.sh \
+	omfwd-lb-susp.sh \
+	omfwd-lb-2target-basic.sh \
+	omfwd-lb-2target-impstats.sh \
+	omfwd-lb-2target-retry.sh \
+        omfwd-lb-2target-one_fail.sh \
+        omfwd-tls-invalid-permitExpiredCerts.sh \
+        omfwd-keepalive.sh \
+        omfwd-subtree-tpl.sh \
+		omfile-subtree-jsonf.sh \
+        omfwd_fast_imuxsock.sh \
+        omfile_hup-vg.sh \
+	omrelp-keepalive.sh \
+        omsendertrack-basic.sh \
+	omsendertrack-basic-vg.sh \
+	omsendertrack-statefile.sh \
+	omsendertrack-statefile-vg.sh \
 	zstd.sh \
 	zstd-vg.sh \
 	gzipwr_hup-vg.sh \
@@ -2222,7 +2457,8 @@ EXTRA_DIST= \
 	json-nonstring.sh \
         json-onempty-at-end.sh \
 	template-json.sh \
-	template-pure-json.sh \
+        template-pure-json.sh \
+        template-jsonf-nested.sh \
 	template-pos-from-to.sh \
 	template-pos-from-to-lowercase.sh \
 	template-pos-from-to-oversize.sh \
@@ -2268,9 +2504,11 @@ EXTRA_DIST= \
 	timegenerated-utc-legacy.sh \
 	timereported-utc.sh \
 	timereported-utc-legacy.sh \
-	timereported-utc-vg.sh \
-	mmrm1stspace-basic.sh \
-	mmnormalize_parsesuccess.sh \
+        timereported-utc-vg.sh \
+        mmrm1stspace-basic.sh \
+        mmaitag-basic.sh \
+        mmaitag-invalid-key.sh \
+        mmnormalize_parsesuccess.sh \
 	mmnormalize_parsesuccess-vg.sh \
 	mmnormalize_rule_from_string.sh \
 	mmnormalize_rule_from_array.sh \
@@ -2305,8 +2543,15 @@ EXTRA_DIST= \
 	rscript_ruleset_call_indirect-invld.sh \
 	cee_simple.sh \
 	cee_diskqueue.sh \
+	mmleefparse_basic.sh \
 	mmjsonparse-w-o-cookie.sh \
 	mmjsonparse-w-o-cookie-multi-spaces.sh \
+        mmjsonparse-find-json-basic.sh \
+        mmjsonparse-find-json-trailing.sh \
+        mmjsonparse-find-json-scan-limit.sh \
+        mmjsonparse-find-json-invalid.sh \
+        mmjsonparse-find-json-invalid-mode.sh \
+        mmjsonparse-find-json-parser-validation.sh \
 	mmjsonparse_simple.sh \
 	mmjsonparse-invalid-containerName.sh \
 	wtpShutdownAll-assertionFailure.sh \
@@ -2314,6 +2559,7 @@ EXTRA_DIST= \
 	imptcp-oversize-message-display.sh \
 	imptcp-msg-truncation-on-number.sh \
 	imptcp-msg-truncation-on-number2.sh \
+	imtcp-netns.sh \
 	imptcp-maxFrameSize-parameter.sh \
 	mmjsonparse_cim.sh \
 	mmjsonparse_cim2.sh \
@@ -2354,7 +2600,6 @@ EXTRA_DIST= \
 	elasticsearch-error-format-check.py \
 	es-duplicated-ruleset.sh \
 	es-duplicated-ruleset-vg.sh \
-	es-basic-es6.0.sh \
 	es-basic-es7.14.sh \
 	es-basic.sh \
 	es-basic-vgthread.sh \
@@ -2370,7 +2615,6 @@ EXTRA_DIST= \
 	es-bulk-errfile-popul-erronly.sh \
 	es-bulk-errfile-popul-erronly-interleaved.sh \
 	es-bulk-errfile-popul-def-interleaved.sh \
-	es-searchType-empty.sh \
 	diskqueue-multithread-es.sh \
 	es-basic-vg.sh \
 	es-basic-bulk-vg.sh \
@@ -2385,6 +2629,10 @@ EXTRA_DIST= \
 	msgdup_props.sh \
 	empty-ruleset.sh \
 	ruleset-direct-queue.sh \
+	fromhost-port.sh \
+	fromhost-port-tuple.sh \
+	fromhost-port-async-ruleset.sh \
+	imtcp-tls-gibberish.sh \
 	imtcp-listen-port-file-2.sh \
 	allowed-sender-tcp-ok.sh \
 	allowed-sender-tcp-fail.sh \
@@ -2394,9 +2642,14 @@ EXTRA_DIST= \
 	imtcp-discard-truncated-msg.sh \
 	imtcp-basic.sh \
 	imtcp-basic-hup.sh \
+	imtcp-impstats.sh \
+	imtcp-impstats-single-thread.sh \
+	imtcp-starvation-0.sh \
+	imtcp-starvation-1.sh \
 	imtcp-maxFrameSize.sh \
 	imtcp-msg-truncation-on-number.sh \
 	imtcp-msg-truncation-on-number2.sh \
+	imtcp-netns.sh \
 	imtcp-NUL.sh \
 	imtcp-NUL-rawmsg.sh \
 	imtcp-tls-gtls-x509fingerprint-invld.sh \
@@ -2448,6 +2701,8 @@ EXTRA_DIST= \
 	imtcp-tls-ossl-error-key.sh \
 	imtcp-tls-ossl-error-key2.sh \
 	manytcp.sh \
+	imtcp-tls-gtls-manycon.sh \
+	imtcp-tls-ossl-manycon.sh \
 	manyptcp.sh \
 	imptcp-basic-hup.sh \
 	imptcp-NUL.sh \
@@ -2612,6 +2867,8 @@ EXTRA_DIST= \
 	imhttp-post-payload-multi-lf-vg.sh \
 	imhttp-post-payload-compress.sh \
 	imhttp-post-payload-compress-vg.sh \
+	imhttp-healthcheck.sh \
+	imhttp-metrics.sh \
 	testsuites/docroot/file.txt \
 	testsuites/htpasswd \
 	omhttp-auth.sh \
@@ -2626,6 +2883,7 @@ EXTRA_DIST= \
 	omhttp-batch-lokirest-retry.sh \
 	omhttp-batch-lokirest.sh \
 	omhttp-batch-lokirest-vg.sh \
+	omhttp-profile-loki.sh \
 	omhttp-batch-newline.sh \
 	omhttp-batch-retry-metadata.sh \
 	omhttp-retry-timeout.sh \
@@ -2682,6 +2940,12 @@ EXTRA_DIST= \
 	testsuites/omprog-transactions-bin.sh \
 	pipe_noreader.sh \
 	uxsock_simple.sh \
+	uxsock_simple_abstract.sh \
+	uxsock_simple_abstract-vg.sh \
+	uxsock_multiple.sh \
+	uxsock_multiple-vg.sh \
+	uxsock_multiple_netns.sh \
+	uxsock_multiple_netns-vg.sh \
 	asynwr_simple.sh \
 	asynwr_simple_2.sh \
 	asynwr_timeout.sh \
@@ -2774,9 +3038,10 @@ EXTRA_DIST= \
 	imfile-symlink-ext-tmp-dir-tree.sh \
 	imfile-logrotate.sh \
 	imfile-logrotate-async.sh \
+	imfile-logrotate-multiple.sh \
 	imfile-logrotate-copytruncate.sh \
 	imfile-logrotate-nocopytruncate.sh \
-	imfile-logrotate-multiple.sh \
+	imfile-logrotate-state-files.sh \
 	imfile-growing-file-id.sh \
 	imfile-ignore-old-file-1.sh \
 	imfile-ignore-old-file-2.sh \
@@ -2845,6 +3110,7 @@ EXTRA_DIST= \
 	kafka-selftest.sh \
 	omkafka.sh \
 	omkafkadynakey.sh \
+	omkafka-headers.sh \
 	omkafka-vg.sh \
 	imkafka-hang-on-no-kafka.sh \
 	imkafka-hang-other-action-on-no-kafka.sh \
@@ -2866,6 +3132,7 @@ EXTRA_DIST= \
 	testsuites/zoo.dep_wrk2.cfg \
 	testsuites/zoo.dep_wrk3.cfg \
 	omazureeventhubs-basic.sh \
+	omazureeventhubs-basic-url.sh \
 	omazureeventhubs-list.sh \
 	omazureeventhubs-stress.sh \
 	omazureeventhubs-interrupt.sh \
@@ -2905,6 +3172,7 @@ EXTRA_DIST= \
 	perctile-simple-vg.sh \
 	stats-json.sh \
 	stats-json-vg.sh \
+	stats-prometheus.sh \
 	stats-cee.sh \
 	stats-cee-vg.sh \
 	stats-json-es.sh \
@@ -3040,6 +3308,7 @@ EXTRA_DIST= \
 	sndrcv_tls_gtls_serveranon_ossl_clientanon.sh \
 	sndrcv_tls_client_missing_cert.sh \
 	sndrcv_ossl_cert_chain.sh \
+	sndrcv_tls_ossl_intermediate_ca_chain.sh \
 	omtcl.sh \
 	omtcl.tcl \
 	pmsnare-default.sh \

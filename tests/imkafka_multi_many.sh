@@ -1,22 +1,22 @@
 #!/bin/bash
 # added 2018-08-29 by alorbach
 # This file is part of the rsyslog project, released under ASL 2.0
-echo Init Testbench 
+echo Init Testbench
 . ${srcdir:=.}/diag.sh init
-check_command_available kafkacat
+check_command_available kcat
 
 # *** ==============================================================================
 export TESTMESSAGES=100000
 export TESTMESSAGESFULL=100000
 
 # Generate random topic name
-export RANDTOPIC=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
+export RANDTOPIC="$(printf '%08x' "$(( (RANDOM<<16) ^ RANDOM ))")"
 
 # Set EXTRA_EXITCHECK to dump kafka/zookeeperlogfiles on failure only.
 export EXTRA_EXITCHECK=dumpkafkalogs
 export EXTRA_EXIT=kafkamulti
 echo ===============================================================================
-echo Check and Stop previous instances of kafka/zookeeper 
+echo Check and Stop previous instances of kafka/zookeeper
 download_kafka
 stop_zookeeper '.dep_wrk1'
 stop_zookeeper '.dep_wrk2'
@@ -33,6 +33,10 @@ start_kafka '.dep_wrk1'
 start_kafka '.dep_wrk2'
 start_kafka '.dep_wrk3'
 
+wait_for_kafka_startup '.dep_wrk1'
+wait_for_kafka_startup '.dep_wrk2'
+wait_for_kafka_startup '.dep_wrk3'
+
 # create new topic
 create_kafka_topic $RANDTOPIC '.dep_wrk1' '22181'
 
@@ -44,9 +48,9 @@ main_queue(queue.timeoutactioncompletion="60000" queue.timeoutshutdown="60000")
 
 module(load="../plugins/imkafka/.libs/imkafka")
 /* Polls messages from kafka server!*/
-input(	type="imkafka" 
-	topic="'$RANDTOPIC'" 
-	broker=["localhost:29092", "localhost:29093", "localhost:29094"]
+input(	type="imkafka"
+	topic="'$RANDTOPIC'"
+	broker=["127.0.0.1:29092", "127.0.0.1:29093", "127.0.0.1:29094"]
 	consumergroup="default1"
 	confParam=[ "compression.codec=none",
 		"session.timeout.ms=10000",
@@ -56,9 +60,9 @@ input(	type="imkafka"
 		"enable.partition.eof=false" ]
 	)
 
-input(	type="imkafka" 
-	topic="'$RANDTOPIC'" 
-	broker=["localhost:29092", "localhost:29093", "localhost:29094"]
+input(	type="imkafka"
+	topic="'$RANDTOPIC'"
+	broker=["127.0.0.1:29092", "127.0.0.1:29093", "127.0.0.1:29094"]
 	consumergroup="default2"
 	confParam=[ "compression.codec=none",
 		"session.timeout.ms=10000",
@@ -68,9 +72,9 @@ input(	type="imkafka"
 		"enable.partition.eof=false" ]
 	)
 
-input(	type="imkafka" 
-	topic="'$RANDTOPIC'" 
-	broker=["localhost:29092", "localhost:29093", "localhost:29094"]
+input(	type="imkafka"
+	topic="'$RANDTOPIC'"
+	broker=["127.0.0.1:29092", "127.0.0.1:29093", "127.0.0.1:29094"]
 	consumergroup="default3"
 	confParam=[ "compression.codec=none",
 		"session.timeout.ms=10000",
@@ -80,9 +84,9 @@ input(	type="imkafka"
 		"enable.partition.eof=false" ]
 	)
 
-input(	type="imkafka" 
-	topic="'$RANDTOPIC'" 
-	broker=["localhost:29092", "localhost:29093", "localhost:29094"]
+input(	type="imkafka"
+	topic="'$RANDTOPIC'"
+	broker=["127.0.0.1:29092", "127.0.0.1:29093", "127.0.0.1:29094"]
 	consumergroup="default4"
 	confParam=[ "compression.codec=none",
 		"session.timeout.ms=10000",
@@ -102,7 +106,7 @@ if ($msg contains "msgnum:") then {
 # Start imkafka receiver config
 echo Starting receiver instance [imkafka]
 startup
-# --- 
+# ---
 
 # Measure Starttime
 TIMESTART=$(date +%s.%N)
@@ -115,11 +119,13 @@ do
 done
 
 echo Inject messages into kafka
-kafkacat <$RSYSLOG_OUT_LOG.in  -P -b localhost:29092 -t $RANDTOPIC
-# --- 
+kcat <$RSYSLOG_OUT_LOG.in  -P -b 127.0.0.1:29092 -t $RANDTOPIC
+# ---
 
-echo Give imkafka some time to start...
-sleep 5
+echo Ensuring kafka brokers remain reachable before shutdown...
+wait_for_kafka_startup '.dep_wrk1'
+wait_for_kafka_startup '.dep_wrk2'
+wait_for_kafka_startup '.dep_wrk3'
 
 echo Stopping sender instance [omkafka]
 shutdown_when_empty

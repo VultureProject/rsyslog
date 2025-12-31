@@ -2,11 +2,11 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ(2.61)
-AC_INIT([rsyslog],[8.2406.0],[rsyslog@lists.adiscon.com])   # UPDATE on release
-AC_DEFINE(VERSION_YEAR,  24, [year part of real rsyslog version])  # UPDATE on release
-AC_DEFINE(VERSION_MONTH,  6, [month part of real rsyslog version]) # UPDATE on release
+AC_INIT([rsyslog],[8.2512.0],[rsyslog@lists.adiscon.com])     # UPDATE on release
+AC_DEFINE(VERSION_YEAR,  25, [year part of real rsyslog version])  # UPDATE on release
+AC_DEFINE(VERSION_MONTH, 12, [month part of real rsyslog version]) # UPDATE on release
 
-AM_INIT_AUTOMAKE([subdir-objects])
+AM_INIT_AUTOMAKE([tar-pax subdir-objects])
 
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 
@@ -233,7 +233,7 @@ AC_TYPE_SIGNAL
 AC_FUNC_STAT
 AC_FUNC_STRERROR_R
 AC_FUNC_VPRINTF
-AC_CHECK_FUNCS([flock recvmmsg basename alarm clock_gettime gethostbyname gethostname gettimeofday localtime_r memset mkdir regcomp select setsid socket strcasecmp strchr strdup strerror strndup strnlen strrchr strstr strtol strtoul uname ttyname_r getline malloc_trim prctl epoll_create epoll_create1 fdatasync syscall lseek64 asprintf close_range])
+AC_CHECK_FUNCS([flock recvmmsg basename alarm clock_gettime gethostbyname gethostname gettimeofday localtime_r memset mkdir regcomp select setsid socket strcasecmp strchr strdup strerror strndup strnlen strrchr strstr strtol strtoul uname ttyname_r getline malloc_trim prctl epoll_create epoll_create1 fdatasync syscall lseek64 asprintf close_range pthread_setname_np])
 AC_CHECK_FUNC([setns], [AC_DEFINE([HAVE_SETNS], [1], [Define if setns exists.])])
 AC_CHECK_TYPES([off64_t])
 
@@ -464,6 +464,28 @@ AC_ARG_ENABLE(fmunflatten,
 )
 AM_CONDITIONAL(ENABLE_FMUNFLATTEN, test x$enable_fmunflatten = xyes)
 
+# PCRE function module
+AC_ARG_ENABLE(fmpcre,
+       [AS_HELP_STRING([--enable-fmpcre],[Enable PCRE based match function @<:@default=no@:>@])],
+       [case "${enableval}" in
+        yes) enable_fmpcre="yes" ;;
+         no) enable_fmpcre="no" ;;
+          *) AC_MSG_ERROR(bad value ${enableval} for --enable-fmpcre) ;;
+        esac],
+       [enable_fmpcre=no]
+)
+if test "x$enable_fmpcre" = "xyes"; then
+       AC_CHECK_LIB([pcre], [pcre_exec], [
+               AC_CHECK_HEADER([pcre.h], [
+                       PCRE_LIBS="-lpcre"
+                       PCRE_CFLAGS=""
+                       AC_SUBST(PCRE_LIBS)
+                       AC_SUBST(PCRE_CFLAGS)
+               ], [AC_MSG_ERROR([pcre headers not found])])
+       ], [AC_MSG_ERROR([libpcre not found])])
+fi
+AM_CONDITIONAL(ENABLE_FMPCRE, test x$enable_fmpcre = xyes)
+
 
 #gssapi
 AC_ARG_ENABLE(gssapi_krb5,
@@ -507,6 +529,23 @@ AC_ARG_ENABLE(root_tests,
         [enable_root_tests=no]
 )
 AM_CONDITIONAL(ENABLE_ROOT_TESTS, test x$enable_root_tests = xyes)
+
+# shall the testbench try to run test that are known flaky?
+# The core idea is to still include these tests, but do not run them on the
+# majority of platforms as long as the known flakes could not be fixed.
+# Note that some tests are inherently flaky, due to hard-to-get-right
+# timing conditions inside the test environment.
+# Nevertheless, as few as possible tests should be flagged as flaky.
+AC_ARG_ENABLE(flaky_tests,
+        [AS_HELP_STRING([--enable-flaky-tests],[enable flaky tests in testbench @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_flaky_tests="yes" ;;
+          no) enable_flaky_tests="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-flaky-tests) ;;
+         esac],
+        [enable_flaky_tests=no]
+)
+AM_CONDITIONAL(ENABLE_FLAKY_TESTS, test x$enable_flaky_tests = xyes)
 
 # multithreading via pthreads
 if test "$os_type" != "solaris"
@@ -1143,6 +1182,25 @@ if test "x$enable_openssl" = "xyes"; then
 fi
 AM_CONDITIONAL(ENABLE_OPENSSL, test x$enable_openssl = xyes)
 
+AC_ARG_ENABLE(openssl_crypto_provider,
+        [AS_HELP_STRING([--enable-opensslcrypto],[Enable openssl crypto provider @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_openssl_crypto_provider="yes" ;;
+          no) enable_openssl_crypto_provider="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-openssl) ;;
+         esac],
+        [enable_openssl_crypto_provider=no]
+)
+if test "x$enable_openssl" = "xyes" && test "x$enable_openssl_crypto_provider" = "xyes"; then
+	AC_CHECK_LIB(
+		[crypto],
+		[EVP_CIPHER_get_block_size],
+		[enable_openssl_crypto_provider="yes"
+		AC_DEFINE([ENABLE_OPENSSL_CRYPTO_PROVIDER], [1], [Indicator that openssl(EVP_CIPHER_get_block_size) is present])
+		],
+		[AC_MSG_WARN([The ossl encryption provider will not be enabled (EVP_CIPHER_get_block_size is missing)])]
+	)
+fi
 
 # GnuTLS support
 AC_ARG_ENABLE(gnutls,
@@ -1173,19 +1231,34 @@ AC_ARG_ENABLE(gnutls-tests,
           no) enable_gnutls_tests="no" ;;
            *) AC_MSG_ERROR(bad value ${enableval} for --enable-gnutls-tests) ;;
          esac],
-        [if [[ "$enable_gnutls" == "yes" ]]; then
+        [if test "x$enable_gnutls" = "xyes"; then
 		enable_gnutls_tests=yes
 	else
 		enable_gnutls_tests=no
 	fi]
 )
-if  [[ "$enable_gnutls_tests" == "yes" ]] && [[ "$enable_gnutls" != "yes" ]]; then
+if test "x$enable_gnutls_tests" = "xyes" && test "x$enable_gnutls" != "xyes"; then
 		AC_MSG_WARN([gnutls-tests can not be enabled without gnutls support. Disabling gnutls tests...])
 		enable_gnutls_tests="no"
 fi
 
 AM_CONDITIONAL(ENABLE_GNUTLS_TESTS, test x$enable_gnutls_tests = xyes)
 
+# Mbed TLS support
+AC_ARG_ENABLE(mbedtls,
+        [AS_HELP_STRING([--enable-mbedtls],[Enable Mbed TLS support @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_mbedtls="yes" ;;
+          no) enable_mbedtls="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-mbedtls) ;;
+         esac],
+        [enable_mbedtls=no]
+)
+if test "x$enable_mbedtls" = "xyes"; then
+	PKG_CHECK_MODULES(MBEDTLS, mbedtls)
+	AC_DEFINE([ENABLE_MBEDTLS], [1], [Indicator that mbedtls is present])
+fi
+AM_CONDITIONAL(ENABLE_MBEDTLS, test x$enable_mbedtls = xyes)
 
 # libgcrypt support
 AC_ARG_ENABLE(libgcrypt,
@@ -1198,24 +1271,58 @@ AC_ARG_ENABLE(libgcrypt,
         [enable_libgcrypt=yes]
 )
 if test "x$enable_libgcrypt" = "xyes"; then
-	AC_PATH_PROG([LIBGCRYPT_CONFIG],[libgcrypt-config],[no])
-        if test "x${LIBGCRYPT_CONFIG}" = "xno"; then
-           AC_MSG_FAILURE([libgcrypt-config not found in PATH])
+        # Check for the modern pkg-config method first
+        AC_CHECK_PROG([HAVE_PKG_CONFIG], [pkg-config], [yes], [no])
+        if test "x${HAVE_PKG_CONFIG}" = "xno"; then
+                # Fallback to the outdated libgcrypt-config approach
+                AC_PATH_PROG([LIBGCRYPT_CONFIG],[libgcrypt-config],[no])
+                if test "x${LIBGCRYPT_CONFIG}" = "xno"; then
+                        AC_MSG_FAILURE([libgcrypt-config not found in PATH and pkg-config is not available. libgcrypt is missing.])
+                fi
+                AC_CHECK_LIB(
+                        [gcrypt],
+                        [gcry_cipher_open],
+                        [LIBGCRYPT_CFLAGS="`${LIBGCRYPT_CONFIG} --cflags`"
+                        LIBGCRYPT_LIBS="`${LIBGCRYPT_CONFIG} --libs`"
+                        ],
+                        [AC_MSG_FAILURE([libgcrypt is missing])],
+                        [`${LIBGCRYPT_CONFIG} --libs --cflags`]
+                )
+        else
+                # Use the preferred pkg-config approach
+                AC_CHECK_LIB(
+                        [gcrypt],
+                        [gcry_cipher_open],
+                        [LIBGCRYPT_CFLAGS="`pkg-config --cflags libgcrypt gpg-error`"
+                        LIBGCRYPT_LIBS="`pkg-config --libs libgcrypt gpg-error`"
+                        ],
+                        [AC_MSG_FAILURE([libgcrypt is missing])],
+                        [`pkg-config --libs --cflags libgcrypt gpg-error`]
+                )
+		if test "x${LIBGCRYPT_CFLAGS}" = "x" && test "x${LIBGCRYPT_LIBS}" = "x";then
+			AC_PATH_PROG([LIBGCRYPT_CONFIG],[libgcrypt-config],[no])
+                        if test "x${LIBGCRYPT_CONFIG}" = "xno"; then
+                                AC_MSG_FAILURE([libgcrypt-config not found in PATH and pkgconfig file of libgcrypt is not available. libgcrypt is missing.])
+                        fi
+                        AC_CHECK_LIB(
+                                [gcrypt],
+                                [gcry_cipher_open],
+                                [LIBGCRYPT_CFLAGS="`${LIBGCRYPT_CONFIG} --cflags`"
+                                LIBGCRYPT_LIBS="`${LIBGCRYPT_CONFIG} --libs`"
+                                ],
+                                [AC_MSG_FAILURE([libgcrypt is missing])],
+                                [`${LIBGCRYPT_CONFIG} --libs --cflags`]
+                        )
+		fi
         fi
-        AC_CHECK_LIB(
-		[gcrypt],
-        	[gcry_cipher_open],
-        	[LIBGCRYPT_CFLAGS="`${LIBGCRYPT_CONFIG} --cflags`"
-        	LIBGCRYPT_LIBS="`${LIBGCRYPT_CONFIG} --libs`"
-        	],
-        	[AC_MSG_FAILURE([libgcrypt is missing])],
-        	[`${LIBGCRYPT_CONFIG} --libs --cflags`]
-        	)
-	AC_DEFINE([ENABLE_LIBGCRYPT], [1], [Indicator that LIBGCRYPT is present])
+        AC_DEFINE([ENABLE_LIBGCRYPT], [1], [Indicator that LIBGCRYPT is present])
 fi
 AM_CONDITIONAL(ENABLE_LIBGCRYPT, test x$enable_libgcrypt = xyes)
+AM_CONDITIONAL(ENABLE_RSCRYUTIL, test x$enable_libgcrypt = xyes || test x$enable_openssl_crypto_provider = xyes)
+AM_CONDITIONAL(ENABLE_OPENSSL_CRYPTO_PROVIDER, test x$enable_openssl_crypto_provider = xyes)
 AC_SUBST(LIBGCRYPT_CFLAGS)
 AC_SUBST(LIBGCRYPT_LIBS)
+
 
 # libzstd support
 AC_ARG_ENABLE(libzstd,
@@ -1385,19 +1492,16 @@ AM_CONDITIONAL(ENABLE_FMHTTP, test x$enable_fmhttp = xyes)
 # imdiag support
 # This is a core testbench tool. You need to enable it if you want to
 # use not only a small subset of the testbench.
+imdiag_user_set=no
 AC_ARG_ENABLE(imdiag,
         [AS_HELP_STRING([--enable-imdiag],[Enable imdiag @<:@default=no@:>@])],
         [case "${enableval}" in
-         yes) enable_imdiag="yes" ;;
-          no) enable_imdiag="no" ;;
+         yes) enable_imdiag="yes"; imdiag_user_set=yes ;;
+          no) enable_imdiag="no"; imdiag_user_set=yes ;;
            *) AC_MSG_ERROR(bad value ${enableval} for --enable-imdiag) ;;
          esac],
         [enable_imdiag=no]
 )
-if test "x$enable_imdiag" = "xyes"; then
-	AC_DEFINE([ENABLE_IMDIAG], [1], [Indicator that IMDIAG is present])
-fi
-AM_CONDITIONAL(ENABLE_IMDIAG, test x$enable_imdiag = xyes)
 
 
 # mmnormalize
@@ -1427,6 +1531,18 @@ fi
 AM_CONDITIONAL(LOGNORM_REGEX_SUPPORTED, test x$lognorm_regex_supported = xyes)
 AM_CONDITIONAL(ENABLE_MMNORMALIZE, test x$enable_mmnormalize = xyes)
 
+# mmleefparse
+AC_ARG_ENABLE(mmleefparse,
+        [AS_HELP_STRING([--enable-mmleefparse],[Enable building mmleefparse support @<:@default=yes@:>@])],
+        [case "${enableval}" in
+         yes) enable_mmleefparse="yes" ;;
+          no) enable_mmleefparse="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-mmleefparse) ;;
+         esac],
+        [enable_mmleefparse=yes]
+)
+AM_CONDITIONAL(ENABLE_MMLEEFPARSE, test x$enable_mmleefparse = xyes)
+
 # mmnjsonparse
 AC_ARG_ENABLE(mmjsonparse,
         [AS_HELP_STRING([--enable-mmjsonparse],[Enable building mmjsonparse support @<:@default=no@:>@])],
@@ -1438,6 +1554,18 @@ AC_ARG_ENABLE(mmjsonparse,
         [enable_mmjsonparse=no]
 )
 AM_CONDITIONAL(ENABLE_MMJSONPARSE, test x$enable_mmjsonparse = xyes)
+
+# mmjsontransform
+AC_ARG_ENABLE(mmjsontransform,
+        [AS_HELP_STRING([--enable-mmjsontransform],[Enable building mmjsontransform support @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_mmjsontransform="yes" ;;
+          no) enable_mmjsontransform="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-mmjsontransform) ;;
+         esac],
+        [enable_mmjsontransform=no]
+)
+AM_CONDITIONAL(ENABLE_MMJSONTRANSFORM, test x$enable_mmjsontransform = xyes)
 
 # mmgrok
 AC_ARG_ENABLE(mmgrok,
@@ -1606,6 +1734,21 @@ AC_ARG_ENABLE(mmpstrucdata,
 )
 AM_CONDITIONAL(ENABLE_MMPSTRUCDATA, test x$enable_mmpstrucdata = xyes)
 
+# mmaitag
+AC_ARG_ENABLE(mmaitag,
+        [AS_HELP_STRING([--enable-mmaitag],[Enable AI tagging module @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_mmaitag="yes" ;;
+          no) enable_mmaitag="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-mmaitag) ;;
+         esac],
+        [enable_mmaitag=no]
+)
+if test "x$enable_mmaitag" = "xyes"; then
+        PKG_CHECK_MODULES([CURL], [libcurl])
+fi
+AM_CONDITIONAL(ENABLE_MMAITAG, test x$enable_mmaitag = xyes)
+
 
 # mmrfc5424addhmac
 AC_ARG_ENABLE(mmrfc5424addhmac,
@@ -1624,6 +1767,19 @@ if test "x$enable_mmrfc5424addhmac" = "xyes"; then
 #AC_CHECK_HEADERS([openssl/crypto.h openssl/x509.h openssl/pem.h openssl/ssl.h openssl/err.h],[],[AC_MSG_ERROR([OpenSSL headers required])])
 fi
 AM_CONDITIONAL(ENABLE_MMRFC5424ADDHMAC, test x$enable_mmrfc5424addhmac = xyes)
+
+
+# mmsnareparse
+AC_ARG_ENABLE(mmsnareparse,
+        [AS_HELP_STRING([--enable-mmsnareparse],[Enable building mmsnareparse support @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_mmsnareparse="yes" ;;
+          no) enable_mmsnareparse="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-mmsnareparse) ;;
+         esac],
+        [enable_mmsnareparse=no]
+)
+AM_CONDITIONAL(ENABLE_MMSNAREPARSE, test x$enable_mmsnareparse = xyes)
 
 
 # experimental omfile-hardened module
@@ -1771,8 +1927,6 @@ AM_CONDITIONAL(ENABLE_LIBFAKETIME, test "x${enable_libfaketime}" = "xyes")
 # are those tests that do not need a special configure option. There are
 # some situations where we really want to turn them of so that we can
 # run tests only for a specific component (e.g. ElasticSearch).
-# This also enables us to do some parallel testing even while the
-# testbench is not yet able to support make -j check
 AC_ARG_ENABLE(default-tests,
         [AS_HELP_STRING([--enable-default-tests],[default-tests enabled @<:@default=yes@:>@])],
         [case "${enableval}" in
@@ -1789,6 +1943,17 @@ if test "x${IP}" = "xno"; then
 	AC_MSG_NOTICE([Will not check network namespace functionality as 'ip' (part of iproute2) is not available.])
 fi
 AM_CONDITIONAL(ENABLE_IP, test "x${IP}" = "xyes")
+
+AC_ARG_ENABLE(imtcp-tests,
+        [AS_HELP_STRING([--enable-imtcp-tests],[imtcp-tests enabled @<:@default=yes@:>@])],
+        [case "${enableval}" in
+         yes) enable_imtcp_tests="yes" ;;
+          no) enable_imtcp_tests="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-imtcp-tests) ;;
+         esac],
+        [enable_imtcp_tests=yes]
+)
+AM_CONDITIONAL(ENABLE_IMTCP_TESTS, test "x${enable_imtcp_tests}" = "xyes")
 
 
 # valgrind-testbench
@@ -1887,7 +2052,7 @@ AC_ARG_ENABLE(imfile-tests,
          esac],
         [enable_imfile_tests=yes]
 )
-if  [[ "$enable_imfile_tests" == "yes" ]] && [[ "$enable_imfile" != "yes" ]]; then
+if  test "x$enable_imfile_tests" = "xyes" && test "x$enable_imfile" != "xyes"; then
 		AC_MSG_WARN([imfile-tests can not be enabled without imfile support. Disabling imfile tests...])
 		enable_imfile_tests="no"
 fi
@@ -1996,6 +2161,58 @@ AC_ARG_ENABLE(imsolaris,
 )
 AM_CONDITIONAL(ENABLE_IMSOLARIS, test x$enable_imsolaris = xyes)
 
+
+# settings for the imtcp input module
+AC_ARG_ENABLE(imtcp_epoll,
+        [AS_HELP_STRING([--disable-imtcp-epoll],[Disable epoll mode in the TCP input module (for testing purposes)])],
+        [case "${enableval}" in
+         yes) enable_imtcp_epoll="yes" ;;
+          no) enable_imtcp_epoll="no" ;;
+           *) AC_MSG_ERROR([bad value ${enableval} for --disable-imtcp-epoll]) ;;
+         esac],
+        [enable_imtcp_epoll=auto]
+)
+
+# Default: Enable imtcp_epoll if epoll is available, unless explicitly disabled
+if test "x$enable_imtcp_epoll" = "xauto"; then
+    if test "x$ac_cv_header_sys_epoll_h" = "xyes" && test "x$ac_cv_func_epoll_create" = "xyes"; then
+        enable_imtcp_epoll="yes"
+    else
+        enable_imtcp_epoll="no"
+    fi
+fi
+
+# Define ENABLE_IMTCP_EPOLL in config.h if epoll is enabled
+if test "x$enable_imtcp_epoll" = "xyes"; then
+    AC_DEFINE([ENABLE_IMTCP_EPOLL], [1], [Enable epoll mode for the imtcp input module])
+fi
+
+# Automake conditional
+AM_CONDITIONAL(ENABLE_IMTCP_EPOLL, test x$enable_imtcp_epoll = xyes)
+
+# Print result
+echo "    TCP input module epoll mode: $enable_imtcp_epoll"
+
+
+
+
+# settings for the imtcp input module
+AC_ARG_ENABLE(imtcp_epoll,
+        [AS_HELP_STRING([--enable-imtcp-epoll],[tcp input module epoll mode permitted @<:@default=yes@:>@])],
+        [case "${enableval}" in
+         yes) enable_imtcp_epoll="yes" ;;
+          no) enable_imtcp_epoll="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-imptcp-epoll) ;;
+         esac],
+        [enable_imptcp_epoll=yes]
+)
+AM_CONDITIONAL(ENABLE_IMPTCP_EPOLL, test x$enable_imptcp_epoll = xyes)
+# Define a preprocessor macro if enabled
+if test "x$enable_imtcp_epoll" = "xyes"; then
+    AC_DEFINE([ENABLE_IMTCP_EPOLL], [1], [Enable epoll mode for the imtcp input module])
+fi
+
+
 # settings for the ptcp input module
 AC_ARG_ENABLE(imptcp,
         [AS_HELP_STRING([--enable-imptcp],[plain tcp input module enabled @<:@default=no@:>@])],
@@ -2083,27 +2300,53 @@ AC_SUBST(UDPSPOOF_CFLAGS)
 AC_SUBST(UDPSPOOF_LIBS)
 
 
+# settings for omsendertrack
+AC_ARG_ENABLE(omsendertrack,
+        [AS_HELP_STRING([--enable-omsendertrack],[Compiles omsendertrack module @<:@default=no@:>@])],
+        [case "${enableval}" in
+         yes) enable_omsendertrack="yes" ;;
+          no) enable_omsendertrack="no" ;;
+           *) AC_MSG_ERROR(bad value ${enableval} for --enable-omsendertrack) ;;
+         esac],
+        [enable_omsendertrack=no]
+)
+AM_CONDITIONAL(ENABLE_OMSENDERTRACK, test x$enable_omsendertrack = xyes)
+
+omstdout_user_set=no
 # settings for omstdout
 AC_ARG_ENABLE(omstdout,
         [AS_HELP_STRING([--enable-omstdout],[Compiles stdout module @<:@default=no@:>@])],
         [case "${enableval}" in
-         yes) enable_omstdout="yes" ;;
-          no) enable_omstdout="no" ;;
+         yes) enable_omstdout="yes"; omstdout_user_set=yes ;;
+          no) enable_omstdout="no"; omstdout_user_set=yes ;;
            *) AC_MSG_ERROR(bad value ${enableval} for --enable-omstdout) ;;
          esac],
         [enable_omstdout=no]
 )
-AM_CONDITIONAL(ENABLE_OMSTDOUT, test x$enable_omstdout = xyes)
 
-AM_CONDITIONAL(ENABLE_TESTBENCH, test x$enable_testbench = xyes)
 if test "x$enable_testbench" = "xyes"; then
 	if test "x$enable_imdiag" != "xyes"; then
-		AC_MSG_ERROR("--enable-testbench requires --enable-imdiag")
+		if test "x$imdiag_user_set" = "xyes"; then
+			AC_MSG_ERROR([--enable-testbench conflicts with --disable-imdiag])
+		fi
+		AC_MSG_NOTICE([--enable-testbench auto-enabling imdiag])
+		enable_imdiag="yes"
 	fi
 	if test "x$enable_omstdout" != "xyes"; then
-		AC_MSG_ERROR("--enable-testbench requires --enable-omstdout")
+		if test "x$omstdout_user_set" = "xyes"; then
+			AC_MSG_ERROR([--enable-testbench conflicts with --disable-omstdout])
+		fi
+		AC_MSG_NOTICE([--enable-testbench auto-enabling omstdout])
+		enable_omstdout="yes"
 	fi
 fi
+
+if test "x$enable_imdiag" = "xyes"; then
+	AC_DEFINE([ENABLE_IMDIAG], [1], [Indicator that IMDIAG is present])
+fi
+AM_CONDITIONAL(ENABLE_IMDIAG, test x$enable_imdiag = xyes)
+AM_CONDITIONAL(ENABLE_OMSTDOUT, test x$enable_omstdout = xyes)
+AM_CONDITIONAL(ENABLE_TESTBENCH, test x$enable_testbench = xyes)
 
 
 # settings for omjournal
@@ -2120,6 +2363,11 @@ if test "x$enable_omjournal" = "xyes"; then
 	PKG_CHECK_MODULES([LIBSYSTEMD_JOURNAL], [libsystemd >= 209] ,, [
 	    PKG_CHECK_MODULES([LIBSYSTEMD_JOURNAL], [libsystemd-journal >= 197])
 	])
+
+	save_libs=$LIBS
+	LIBS="$LIBS $LIBSYSTEMD_JOURNAL_LIBS"
+	AC_CHECK_FUNCS(sd_journal_stream_fd_with_namespace,,)
+	LIBS=$save_libs
 fi
 AM_CONDITIONAL(ENABLE_OMJOURNAL, test x$enable_omjournal = xyes)
 
@@ -2356,8 +2604,8 @@ AM_CONDITIONAL(ENABLE_KAFKA_STATIC, test x$enable_kafka_static = xyes)
 # omkafka works with older library
 omkafka_use_dummy="no"
 if test "$enable_omkafka" = "yes" -o "$enable_omkafka" = "optional"; then
-	PKG_CHECK_MODULES([LIBRDKAFKA], [rdkafka >= 0.9.1],, [
-		PKG_CHECK_MODULES([LIBRDKAFKA], [librdkafka],, [
+        PKG_CHECK_MODULES([LIBRDKAFKA], [rdkafka >= 0.11.0],, [
+                PKG_CHECK_MODULES([LIBRDKAFKA], [librdkafka],, [
 			AC_CHECK_LIB([rdkafka], [rd_kafka_last_error], [
 				AC_MSG_WARN([librdkafka is missing but library present, using -lrdkafka])
 				LIBRDKAFKA_LIBS=-lrdkafka
@@ -2392,7 +2640,7 @@ fi
 imkafka_use_dummy="no"
 # imkafka needs newer library
 if test "x$enable_imkafka" = "xyes" -o "$enable_imkafka" = "optional"; then
-	PKG_CHECK_MODULES([LIBRDKAFKA], [rdkafka >= 0.9.1],, [
+        PKG_CHECK_MODULES([LIBRDKAFKA], [rdkafka >= 0.11.0],, [
 		AC_CHECK_LIB([rdkafka], [rd_kafka_consumer_poll], [
 			AC_MSG_WARN([librdkafka is missing but library present, using -lrdkafka])
 			LIBRDKAFKA_LIBS=-lrdkafka
@@ -2507,9 +2755,11 @@ AC_ARG_ENABLE(ommongodb,
         [enable_ommongodb=no]
 )
 if test "x$enable_ommongodb" = "xyes"; then
-	PKG_CHECK_MODULES(LIBMONGOC, libmongoc-1.0)
-    AC_CHECK_FUNCS(mongoc_client_set_ssl_opts,,)
-
+	PKG_CHECK_MODULES(LIBMONGOC, mongoc2,, [
+		PKG_CHECK_MODULES(LIBMONGOC, libmongoc-1.0,
+			[AC_DEFINE([HAVE_LIBMONGOC1], [1], [Use v1 of libmongoc])
+		])
+	])
 fi
 AM_CONDITIONAL(ENABLE_OMMONGODB, test x$enable_ommongodb = xyes)
 # end of mongodb code
@@ -2774,7 +3024,7 @@ AC_ARG_ENABLE(omamqp1,
         [enable_omamqp1=no]
 )
 if test "x$enable_omamqp1" = "xyes"; then
-        PKG_CHECK_MODULES(PROTON, libqpid-proton >= 0.9)
+        PKG_CHECK_MODULES(PROTON, libqpid-proton >= 0.13)
         AC_SUBST(PROTON_CFLAGS)
         AC_SUBST(PROTON_LIBS)
 fi
@@ -2908,7 +3158,6 @@ if test "x$have_to_generate_man_pages" = "xyes" && test "x$RST2MAN" = "xfalse"; 
         AC_MSG_ERROR([rst2man is required when building from git source or --enable-generate-man-pages option was set, please install python-docutils.])
 fi
 
-
 AC_CONFIG_FILES([Makefile \
 		runtime/Makefile \
 		compat/Makefile \
@@ -2927,6 +3176,7 @@ AC_CONFIG_FILES([Makefile \
 		plugins/omprog/Makefile \
 		plugins/mmexternal/Makefile \
 		plugins/omstdout/Makefile \
+		plugins/omsendertrack/Makefile \
 		plugins/omjournal/Makefile \
 		plugins/pmciscoios/Makefile \
 		plugins/pmnull/Makefile \
@@ -2953,14 +3203,17 @@ AC_CONFIG_FILES([Makefile \
 		plugins/omudpspoof/Makefile \
 		plugins/ommongodb/Makefile \
 		plugins/mmnormalize/Makefile \
-		plugins/mmjsonparse/Makefile \
+        plugins/mmjsonparse/Makefile \
+        plugins/mmjsontransform/Makefile \
+        plugins/mmleefparse/Makefile \
 		plugins/mmaudit/Makefile \
 		plugins/mmanon/Makefile \
 		plugins/mmrm1stspace/Makefile \
 		plugins/mmutf8fix/Makefile \
-		plugins/mmfields/Makefile \
-		plugins/mmpstrucdata/Makefile \
-		plugins/omelasticsearch/Makefile \
+        plugins/mmfields/Makefile \
+        plugins/mmpstrucdata/Makefile \
+        plugins/mmaitag/Makefile \
+        plugins/omelasticsearch/Makefile \
 		plugins/omclickhouse/Makefile \
 		plugins/mmsnmptrapd/Makefile \
 		plugins/pmlastmsg/Makefile \
@@ -2970,9 +3223,10 @@ AC_CONFIG_FILES([Makefile \
 		plugins/omdtls/Makefile \
 		contrib/mmdarwin/Makefile \
 		contrib/omhttp/Makefile \
-		contrib/fmhash/Makefile \
-		contrib/fmunflatten/Makefile \
-		contrib/ffaup/Makefile \
+        contrib/fmhash/Makefile \
+        contrib/fmunflatten/Makefile \
+        plugins/fmpcre/Makefile \
+        contrib/ffaup/Makefile \
 		contrib/pmsnare/Makefile \
 		contrib/pmpanngfw/Makefile \
 		contrib/pmaixforwardedfrom/Makefile \
@@ -2983,9 +3237,10 @@ AC_CONFIG_FILES([Makefile \
 		contrib/mmcount/Makefile \
 		contrib/omczmq/Makefile \
 		contrib/imczmq/Makefile \
-		contrib/mmsequence/Makefile \
-		contrib/mmrfc5424addhmac/Makefile \
-		contrib/pmcisconames/Makefile \
+                contrib/mmsequence/Makefile \
+                contrib/mmrfc5424addhmac/Makefile \
+                plugins/mmsnareparse/Makefile \
+                contrib/pmcisconames/Makefile \
 		contrib/omhttpfs/Makefile \
 		contrib/omamqp1/Makefile \
 		contrib/omtcl/Makefile \
@@ -3016,7 +3271,8 @@ echo "    have to generate man pages:               $have_to_generate_man_pages"
 echo "    Unlimited select() support enabled:       $enable_unlimited_select"
 echo "    uuid support enabled:                     $enable_uuid"
 echo "    Log file signing support via KSI LS12:    $enable_ksi_ls12"
-echo "    Log file encryption support:              $enable_libgcrypt"
+echo "    Log file gcry encryption support:         $enable_libgcrypt"
+echo "    Log file ossl encryption support:         $enable_openssl_crypto_provider"
 echo "    Log file compression via zstd support:    $enable_libzstd"
 echo "    anonymization support enabled:            $enable_mmanon"
 echo "    message counting support enabled:         $enable_mmcount"
@@ -3033,6 +3289,7 @@ if test "$unamestr" != "AIX"; then
 echo "    Klog functionality enabled:               $enable_klog ($os_type)"
 fi
 echo "    /dev/kmsg functionality enabled:          $enable_kmsg"
+echo "    tcp input module epoll permitted:         $enable_imtcp_epoll"
 echo "    plain tcp input module enabled:           $enable_imptcp"
 echo "    DTLS udp input module enabled:            $enable_imdtls"
 echo "    imdiag enabled:                           $enable_imdiag"
@@ -3061,6 +3318,7 @@ echo "    Mail support enabled:                     $enable_mail"
 echo "    omfile-hardened module will be compiled:  $enable_omfile_hardened"
 echo "    omprog module will be compiled:           $enable_omprog"
 echo "    omstdout module will be compiled:         $enable_omstdout"
+echo "    omsendertrack module will be compiled:    $enable_omsendertrack"
 echo "    omjournal module will be compiled:        $enable_omjournal"
 echo "    omhdfs module will be compiled:           $enable_omhdfs"
 echo "    omelasticsearch module will be compiled:  $enable_elasticsearch"
@@ -3094,11 +3352,14 @@ echo
 echo "---{ message modification modules }---"
 echo "    mmnormalize module will be compiled:      $enable_mmnormalize"
 echo "    mmjsonparse module will be compiled:      $enable_mmjsonparse"
+echo "    mmjsontransform module will be compiled:  $enable_mmjsontransform"
+echo "    mmleefparse module will be compiled:      $enable_mmleefparse"
 echo "    mmgrok module will be compiled:           $enable_mmgrok"
 echo "    mmjaduit module will be compiled:         $enable_mmaudit"
 echo "    mmsnmptrapd module will be compiled:      $enable_mmsnmptrapd"
 echo "    mmutf8fix enabled:                        $enable_mmutf8fix"
 echo "    mmrfc5424addhmac enabled:                 $enable_mmrfc5424addhmac"
+echo "    mmsnareparse enabled:                    $enable_mmsnareparse"
 echo "    mmpstrucdata enabled:                     $enable_mmpstrucdata"
 echo "    mmsequence enabled:                       $enable_mmsequence"
 echo "    mmdblookup enabled:                       $enable_mmdblookup"
@@ -3106,6 +3367,7 @@ echo "    mmdarwin enabled:                         $enable_mmdarwin"
 echo "    mmfields enabled:                         $enable_mmfields"
 echo "    mmrm1stspace module enabled:              $enable_mmrm1stspace"
 echo "    mmkubernetes enabled:                     $enable_mmkubernetes"
+echo "    mmaitag enabled:                          $enable_mmaitag"
 echo "    mmtaghostname enabled:                    $enable_mmtaghostname"
 echo
 echo "---{ database support }---"
@@ -3121,6 +3383,7 @@ echo
 echo "---{ protocol support }---"
 echo "    openssl network stream driver enabled:    $enable_openssl"
 echo "    GnuTLS network stream driver enabled:     $enable_gnutls"
+echo "    Mbed TLS network stream driver enabled:   $enable_mbedtls"
 echo "    GSSAPI Kerberos 5 support enabled:        $enable_gssapi_krb5"
 echo "    RELP support enabled:                     $enable_relp"
 echo "    SNMP support enabled:                     $enable_snmp"
@@ -3131,6 +3394,7 @@ echo "    fmhttp enabled:                           $enable_fmhttp"
 echo "    fmhash enabled:                           $enable_fmhash"
 echo "    fmhash with xxhash enabled:               $enable_fmhash_xxhash"
 echo "    fmunflatten enabled:                      $enable_fmunflatten"
+echo "    fmpcre enabled:                          $enable_fmpcre"
 echo "    ffaup enabled:                            $enable_ffaup"
 echo
 echo "---{ debugging support }---"
@@ -3149,10 +3413,12 @@ echo "    Kafka Tests enabled:                      $enable_kafka_tests"
 echo "    Redis Tests enabled:                      $enable_redis_tests"
 echo "    Omazureeventhubs Tests enabled:           $enable_omazureeventhubs_tests"
 echo "    Imdocker Tests enabled:                   $enable_imdocker_tests"
+echo "    imtcp tests enabled:                      $enable_imtcp_tests"
 echo "    gnutls tests enabled:                     $enable_gnutls_tests"
 echo "    imfile tests enabled:                     $enable_imfile_tests"
 echo "    systemd journal tests enabled:            $enable_journal_tests"
 echo "    SNMP Tests enabled:                       $enable_snmp_tests"
+echo "    Flaky Tests enabled:                      $enable_flaky_tests"
 echo "    Debug mode enabled:                       $enable_debug"
 echo "    (total) debugless mode enabled:           $enable_debugless"
 echo "    Diagnostic tools enabled:                 $enable_diagtools"

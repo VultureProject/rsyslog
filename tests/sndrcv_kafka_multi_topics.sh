@@ -1,14 +1,16 @@
 #!/bin/bash
 # added 2018-08-13 by alorbach
 # This file is part of the rsyslog project, released under ASL 2.0
+: "${STARTUP_MAX_RUNTIME:=300}"
+export STARTUP_MAX_RUNTIME
 . ${srcdir:=.}/diag.sh init
 
 export TESTMESSAGES=50000
 export TESTMESSAGESFULL=100000
 
 # Generate random topic name
-export RANDTOPIC1=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
-export RANDTOPIC2=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
+export RANDTOPIC1="$(printf '%08x' "$(( (RANDOM<<16) ^ RANDOM ))")"
+export RANDTOPIC2="$(printf '%08x' "$(( (RANDOM<<16) ^ RANDOM ))")"
 
 # Set EXTRA_EXITCHECK to dump kafka/zookeeperlogfiles on failure only.
 export EXTRA_EXITCHECK=dumpkafkalogs
@@ -57,7 +59,7 @@ local4.* action(	name="kafka-fwd"
 	action.resumeRetryCount="10"
 	queue.saveonshutdown="on"
 	)
-local4.* action(	name="kafka-fwd"
+local4.* action(	name="kafka-fwd-2"
 	type="omkafka"
 	topic="'$RANDTOPIC2'"
 	broker="localhost:29092"

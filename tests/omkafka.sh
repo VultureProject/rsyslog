@@ -3,18 +3,18 @@
 # This file is part of the rsyslog project, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
 test_status unreliable 'https://github.com/rsyslog/rsyslog/issues/3197'
-check_command_available kafkacat
+check_command_available kcat
 
 export KEEP_KAFKA_RUNNING="YES"
 export TESTMESSAGES=100000
 export TESTMESSAGESFULL=$TESTMESSAGES
 
-export RANDTOPIC=$(tr -dc 'a-zA-Z0-9' < /dev/urandom | fold -w 8 | head -n 1)
+export RANDTOPIC="$(printf '%08x' "$(( (RANDOM<<16) ^ RANDOM ))")"
 
 # Set EXTRA_EXITCHECK to dump kafka/zookeeperlogfiles on failure only.
 export EXTRA_EXITCHECK=dumpkafkalogs
 export EXTRA_EXIT=kafka
-echo Check and Stop previous instances of kafka/zookeeper 
+echo Check and Stop previous instances of kafka/zookeeper
 download_kafka
 stop_zookeeper
 stop_kafka
@@ -24,7 +24,7 @@ start_zookeeper
 start_kafka
 create_kafka_topic $RANDTOPIC '.dep_wrk' '22181'
 
-# --- Create/Start omkafka sender config 
+# --- Create/Start omkafka sender config
 export RSYSLOG_DEBUGLOG="log"
 generate_conf
 add_conf '
@@ -43,7 +43,7 @@ local4.* {
 	action(	name="kafka-fwd"
 	type="omkafka"
 	topic="'$RANDTOPIC'"
-	broker="localhost:29092"
+	broker="127.0.0.1:29092"
 	template="outfmt"
 	confParam=[	"compression.codec=none",
 			"socket.timeout.ms=10000",
@@ -54,6 +54,7 @@ local4.* {
 			"message.send.max.retries=1"]
 	topicConfParam=["message.timeout.ms=10000"]
 	partitions.auto="on"
+	errorFile="'$RSYSLOG_OUT_LOG'-kafka_errors.log"
 	closeTimeout="60000"
 	resubmitOnFailure="on"
 	keepFailedMessages="on"
@@ -72,12 +73,12 @@ action( type="omfile" file="'$RSYSLOG_DYNNAME.othermsg'")
 echo Starting sender instance [omkafka]
 startup
 
-echo Inject messages into rsyslog sender instance  
+echo Inject messages into rsyslog sender instance
 injectmsg 1 $TESTMESSAGES
 
 wait_file_lines $RSYSLOG_OUT_LOG $TESTMESSAGESFULL 100
 
-# experimental: wait until kafkacat receives everything
+# experimental: wait until kcat receives everything
 
 timeoutend=100
 timecounter=0
@@ -85,7 +86,7 @@ timecounter=0
 while [ $timecounter -lt $timeoutend ]; do
 	(( timecounter++ ))
 
-	kafkacat -b localhost:29092 -e -C -o beginning -t $RANDTOPIC -f '%s' > $RSYSLOG_OUT_LOG
+	kcat -b 127.0.0.1:29092 -e -C -o beginning -t $RANDTOPIC -f '%s' > $RSYSLOG_OUT_LOG
 	count=$(wc -l < ${RSYSLOG_OUT_LOG})
 	if [ $count -eq $TESTMESSAGESFULL ]; then
 		printf '**** wait-kafka-lines success, have %d lines ****\n\n' "$TESTMESSAGESFULL"
@@ -114,8 +115,8 @@ echo Stopping sender instance [omkafka]
 shutdown_when_empty
 wait_shutdown
 
-#kafkacat -b localhost:29092 -e -C -o beginning -t $RANDTOPIC -f '%s' > $RSYSLOG_OUT_LOG
-#kafkacat -b localhost:29092 -e -C -o beginning -t $RANDTOPIC -f '%p@%o:%k:%s' > $RSYSLOG_OUT_LOG.extra
+#kcat -b 127.0.0.1:29092 -e -C -o beginning -t $RANDTOPIC -f '%s' > $RSYSLOG_OUT_LOG
+#kcat -b 127.0.0.1:29092 -e -C -o beginning -t $RANDTOPIC -f '%p@%o:%k:%s' > $RSYSLOG_OUT_LOG.extra
 
 # Delete topic to remove old traces before
 delete_kafka_topic $RANDTOPIC '.dep_wrk' '22181'

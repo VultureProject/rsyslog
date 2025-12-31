@@ -2,6 +2,7 @@
 # This file is part of the rsyslog project, released under ASL 2.0
 . ${srcdir:=.}/diag.sh init
 export NUMMESSAGES=100 #10000
+require_elasticsearch_restart_capability
 ensure_elasticsearch_ready
 
 init_elasticsearch
@@ -14,13 +15,13 @@ template(name="tpl2" type="string" string="%msg:F,58:2%\n")
 module(load="../plugins/omelasticsearch/.libs/omelasticsearch")
 
 if $msg contains "msgnum:" then {
-	action(type="omelasticsearch"
-	       server="127.0.0.1"
-	       serverport="19200"
-	       template="tpl"
-	       searchIndex="rsyslog_testbench"
-	       action.resumeInterval="2"
-	       action.resumeretrycount="1")
+        action(type="omelasticsearch"
+               server="127.0.0.1"
+               serverport="19200"
+               template="tpl"
+               searchIndex="rsyslog_testbench"
+               action.resumeInterval="2"
+               action.resumeretrycount="1")
 
 	action(type="omfile" file="'$RSYSLOG_OUT_LOG'" template="tpl2"
 		action.execOnlyWhenPreviousIsSuspended="on")

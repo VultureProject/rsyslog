@@ -1,0 +1,8 @@
+build
+source/_build
+.venv
+.project
+.vscode
+*.pyc
+*.sw?
+.idea/

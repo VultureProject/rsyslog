@@ -12,7 +12,7 @@ if [ $(uname) = "FreeBSD" ] ; then
    exit 77
 fi
 
-# create the pipe and start a background process that copies data from 
+# create the pipe and start a background process that copies data from
 # it to the "regular" work file
 generate_conf
 add_conf '
