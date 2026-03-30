@@ -1156,6 +1156,7 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	}
 
 finalize_it:
+	curl_slist_free_all(headers);
 	curl_easy_cleanup(curl);
 	RETiRet;
 }
