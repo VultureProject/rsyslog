@@ -1641,9 +1641,9 @@ setInstParamDefaults(instanceData *const pData)
 	pData->client_id = NULL;
 	pData->tenant_id = NULL;
 	pData->client_secret = NULL;
-	pData->scope = (uchar*)"https://monitor.azure.com/.default";
-	pData->grant_type = (uchar*)"client_credentials";
-	pData->auth_domain= (uchar*)"login.microsoftonline.com";
+	pData->scope = (uchar*)strdup("https://monitor.azure.com/.default");
+	pData->grant_type = (uchar*)strdup("client_credentials");
+	pData->auth_domain= (uchar*)strdup("login.microsoftonline.com");
 	pData->restPath = NULL;
 	pData->proxyHost = NULL;
 	pData->proxyPort = 0;
@@ -1725,14 +1725,20 @@ CODESTARTnewActInst
 		}
 		else if (!strcmp(actpblk.descr[i].name, "scope"))
 		{
+			if(pData->scope)
+				free(pData->scope);
 			pData->scope = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
 		}
 		else if (!strcmp(actpblk.descr[i].name, "grant_type"))
 		{
+			if(pData->grant_type)
+				free(pData->grant_type);
 			pData->grant_type = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
 		}
 		else if (!strcmp(actpblk.descr[i].name, "auth_domain"))
 		{
+			if(pData->auth_domain)
+				free(pData->auth_domain);
 			pData->auth_domain = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
 		}
 		else if (!strcmp(actpblk.descr[i].name, "proxyhost"))
