@@ -665,7 +665,7 @@ queueBatchOnRetryRuleset(wrkrInstanceData_t *const pWrkrData, instanceData *cons
 		MsgSetInputName(pMsg, pInputName);
 		MsgSetRawMsg(pMsg, (const char *)msgData, ustrlen(msgData));
 		MsgSetMSGoffs(pMsg, 0); // No header
-		MsgSetTAG(pMsg, (const uchar *)"omsentinel-retry", 12);
+		MsgSetTAG(pMsg, (const uchar *)"omsentinel-retry", 16);
 
 		// And place it on the retry ruleset
 		MsgSetRuleset(pMsg, pData->retryRuleset);
