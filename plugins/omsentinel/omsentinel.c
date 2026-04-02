@@ -233,6 +233,7 @@ static rsRetVal curlSetup(wrkrInstanceData_t *pWrkrData);
 static void curlCleanup(wrkrInstanceData_t *pWrkrData);
 static void curlCheckConnSetup(wrkrInstanceData_t *const pWrkrData);
 static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message);
+static rsRetVal initAuth(wrkrInstanceData_t *pWrkrData);
 
 /* compressCtx functions */
 static void ATTR_NONNULL()
@@ -446,6 +447,8 @@ curlResult(void *ptr, size_t size, size_t nmemb, void *userdata)
 BEGINtryResume
 CODESTARTtryResume
 	DBGPRINTF("omsentinel: tryResume called\n");
+	CHKiRet(initAuth(pWrkrData));
+finalize_it:
 ENDtryResume
 
 
@@ -1102,7 +1105,7 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	if (res != CURLE_OK)
 	{
 		LogError(0, RS_RET_ERR, "curl:  error: %s\n", curl_easy_strerror(res));
-		ABORT_FINALIZE(RS_RET_ERR);
+		ABORT_FINALIZE(RS_RET_SUSPENDED);
 	}
 
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
@@ -1133,6 +1136,18 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 						ABORT_FINALIZE(RS_RET_ERR);
 					}
 				}
+				else
+				{
+					LogError(0, RS_RET_SUSPENDED, 
+						"omsentinel: 'access_token' value is NULL in JSON reply : %s\n", pData->authReply);
+						ABORT_FINALIZE(RS_RET_SUSPENDED);
+				}
+			}
+			else
+			{
+				LogError(0, RS_RET_SUSPENDED, 
+						"omsentinel: failed to parse JSON from http response: %s\n", pData->authReply);
+						ABORT_FINALIZE(RS_RET_SUSPENDED);
 			}
 			// expiration date
 			if (json_object_object_get_ex(parsed_json, "expires_in", &expires_in))
@@ -1143,6 +1158,18 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 					// Calculation of the expiration date from now
 					pData->authExp = time(NULL) + expireDate;
 				}
+				else
+				{
+					LogError(0, RS_RET_SUSPENDED, 
+						"omsentinel: 'expires_in' value is NULL in JSON reply : %s\n", pData->authReply);
+						ABORT_FINALIZE(RS_RET_SUSPENDED);
+				}
+			}
+			else
+			{
+				LogError(0, RS_RET_SUSPENDED, 
+						"omsentinel: failed to parse JSON from http response: %s\n", pData->authReply);
+						ABORT_FINALIZE(RS_RET_SUSPENDED); 
 			}
 			json_object_put(parsed_json);
 		}
@@ -1163,6 +1190,38 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 finalize_it:
 	curl_slist_free_all(headers);
 	curl_easy_cleanup(curl);
+	RETiRet;
+}
+
+static rsRetVal initAuth(wrkrInstanceData_t *pWrkrData)
+{
+	instanceData *pData = pWrkrData->pData;
+	DEFiRet;
+
+	if (time(NULL) >= pData->authExp)
+	{
+		if (pData->authReply)
+		{
+			free(pData->authReply);
+		}
+		if (pData->token)
+		{
+			free(pData->token);
+		}
+		if (pData->httpHeader)
+		{
+			free(pData->httpHeader);
+		}
+
+		// nullify to prevent dangling pointers
+		pData->token = NULL;
+		pData->authReply = NULL;
+		pData->httpHeader = NULL;
+	
+
+		CHKiRet(curlAuth(pWrkrData, pData->authParams));
+	}
+finalize_it:
 	RETiRet;
 }
 
@@ -1388,31 +1447,6 @@ finalize_it:
 
 BEGINbeginTransaction
 CODESTARTbeginTransaction
-	instanceData *pData = pWrkrData->pData;
-
-	if (time(NULL) >= pData->authExp && pData->token)
-	{
-		if (pData->authReply)
-		{
-			free(pData->authReply);
-		}
-		if (pData->token)
-		{
-			free(pData->token);
-		}
-		if (pData->httpHeader)
-		{
-			free(pData->httpHeader);
-		}
-
-		// nullify to prevent dangling pointers
-		pData->token = NULL;
-		pData->authReply = NULL;
-		pData->httpHeader = NULL;
-
-		curlAuth(pWrkrData, pData->authParams);
-	}
-
 	initializeBatch(pWrkrData);
 ENDbeginTransaction
 
@@ -1424,7 +1458,10 @@ CODESTARTdoAction
 
 	STATSCOUNTER_INC(ctrMessagesSubmitted, mutCtrMessagesSubmitted);
 
-	if (pData->token && pData->dce && pData->dcr && pData->stream_name)
+	// Before building batch check/regenerate auths
+	CHKiRet(initAuth(pWrkrData));
+
+	if (pData->token)
 	{
 
 		/* If the maxbatchsize is 1, then build and immediately post a batch with 1 element.
@@ -1475,8 +1512,8 @@ CODESTARTdoAction
 	}
 	else
 	{
-		LogError(0, RS_RET_ERR, "omsentinel: an error occured, aborting...");
-		ABORT_FINALIZE(RS_RET_ERR);
+		LogError(0, RS_RET_SUSPENDED, "omsentinel: an error occured, retrying...");
+		ABORT_FINALIZE(RS_RET_SUSPENDED);
 	}
 
 finalize_it:
