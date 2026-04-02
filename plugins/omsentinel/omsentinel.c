@@ -1065,48 +1065,53 @@ size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp)
 static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 {
 	instanceData *pData = pWrkrData->pData;
-	CURL *curl;
+	CURL *curl = NULL;
 	CURLcode res;
 	struct curl_slist *headers = NULL;
 	long http_code = 0;
 	DEFiRet;
 
 	curl = curl_easy_init();
-	if (curl)
+	
+	if (curl == NULL)
 	{
-		headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
-		curl_easy_setopt(curl, CURLOPT_URL, pData->apiRestAuth);
-		curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-		curl_easy_setopt(curl, CURLOPT_POSTFIELDS, message);
-		curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-		curl_easy_setopt(curl, CURLOPT_WRITEDATA, pData);
-		if (pData->proxyHost != NULL)
-		{
-			curl_easy_setopt(curl, CURLOPT_PROXY, pData->proxyHost);
-		}
-		if (pData->proxyPort != 0)
-		{
-			curl_easy_setopt(curl, CURLOPT_PROXYPORT, pData->proxyPort);
-		}
-		if (pData->authBuf != NULL)
-		{
-			curl_easy_setopt(curl, CURLOPT_USERPWD, pData->authBuf);
-			curl_easy_setopt(curl, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
-		}
-		res = curl_easy_perform(curl);
-		if (res != CURLE_OK)
-		{
-			LogError(0, RS_RET_ERR, "curl:  error: %s\n", curl_easy_strerror(res));
-			ABORT_FINALIZE(RS_RET_ERR);
-		}
-
-		curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
-		if (http_code != 200)
-		{
-			dbgprintf("omsentinel: http_reply_code=%ld \n", http_code);
-			ABORT_FINALIZE(RS_RET_SUSPENDED);
-		}
+		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: Failed to initialize libcurl during authentication");
+		ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
 	}
+
+	headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
+	curl_easy_setopt(curl, CURLOPT_URL, pData->apiRestAuth);
+	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, message);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, pData);
+	if (pData->proxyHost != NULL)
+	{
+		curl_easy_setopt(curl, CURLOPT_PROXY, pData->proxyHost);
+	}
+	if (pData->proxyPort != 0)
+	{
+		curl_easy_setopt(curl, CURLOPT_PROXYPORT, pData->proxyPort);
+	}
+	if (pData->authBuf != NULL)
+	{
+		curl_easy_setopt(curl, CURLOPT_USERPWD, pData->authBuf);
+		curl_easy_setopt(curl, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
+	}
+	res = curl_easy_perform(curl);
+	if (res != CURLE_OK)
+	{
+		LogError(0, RS_RET_ERR, "curl:  error: %s\n", curl_easy_strerror(res));
+		ABORT_FINALIZE(RS_RET_ERR);
+	}
+
+	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if (http_code != 200)
+	{
+		dbgprintf("omsentinel: http_reply_code=%ld \n", http_code);
+		ABORT_FINALIZE(RS_RET_SUSPENDED);
+	}
+	
 
 	// parsing and serializing http response
 	if(pData->authReply){
