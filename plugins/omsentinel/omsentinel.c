@@ -1101,6 +1101,10 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 		curl_easy_setopt(curl, CURLOPT_USERPWD, pData->authBuf);
 		curl_easy_setopt(curl, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
 	}
+	if (pData->caCertFile != NULL)
+	{
+		curl_easy_setopt(curl, CURLOPT_CAINFO, pData->caCertFile);
+	}
 	res = curl_easy_perform(curl);
 	if (res != CURLE_OK)
 	{
