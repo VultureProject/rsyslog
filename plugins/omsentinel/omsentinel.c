@@ -106,7 +106,6 @@ typedef struct instanceConf_s
 	uchar *scope;		// wanted resource
 	uchar *grant_type;	// auth type
 	uchar *auth_domain;
-	uchar *authorizationHeader;
 	time_t authExp;
 	uchar *apiRestAuth;
 	uchar *authReply;
@@ -232,6 +231,7 @@ static struct cnfparamblk actpblk =
 static rsRetVal curlSetup(wrkrInstanceData_t *pWrkrData);
 static void curlCleanup(wrkrInstanceData_t *pWrkrData);
 static void curlCheckConnSetup(wrkrInstanceData_t *const pWrkrData);
+size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp);
 static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message);
 static rsRetVal initAuth(wrkrInstanceData_t *pWrkrData);
 
@@ -1181,7 +1181,7 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	}
 
 	// httpHeader
-	if (asprintf((char **)&pData->httpHeader, (char *)pData->authorizationHeader, pData->token) < 0)
+	if (asprintf((char **)&pData->httpHeader, (char *)"Authorization: Bearer %s", pData->token) < 0)
 	{
 		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for http header\n");
 		ABORT_FINALIZE(RS_RET_ERR);
@@ -1672,7 +1672,6 @@ setInstParamDefaults(instanceData *const pData)
 	pData->dce = NULL;
 	pData->stream_name = NULL;
 	pData->baseURL = NULL;
-	pData->authorizationHeader = (uchar *)"Authorization: Bearer %s";
 	pData->authExp = 0;
 	pData->apiRestAuth = NULL;
 	pData->authReply = NULL;
