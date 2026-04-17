@@ -2428,6 +2428,7 @@ omhttp_stop_server() {
     fi
 }
 
+
 omhttp_get_data() {
     # Args: 1=port 2=endpoint 3=batchformat(optional)
     if [ "x$1" == "x" ]; then
@@ -2489,6 +2490,149 @@ omhttp_validate_metadata_response() {
 		printf 'omhttp_validate_metadata_response failed \n'
 		error_exit 1 
 	fi
+}
+
+# ---------------------------------------------------------------------------
+# omsentinel_gen_certs
+#
+# Generates a self-signed certificate for 127.0.0.1 / localhost into
+# $RSYSLOG_DYNNAME/sentinel.{crt,key}.
+# Uses a minimal OpenSSL config to add the SAN extension portably (works with
+# OpenSSL 1.0 through 3.x, no -addext flag needed).
+#
+# Sets:
+#   $SENTINEL_CERT   path to the generated PEM cert  (also acts as the CA cert)
+#   $SENTINEL_KEY    path to the generated PEM key
+# ---------------------------------------------------------------------------
+omsentinel_gen_certs() {
+    local dir="$RSYSLOG_DYNNAME"
+    SENTINEL_CERT="$dir/sentinel.crt"
+    SENTINEL_KEY="$dir/sentinel.key"
+    local cnf="$dir/sentinel-openssl.cnf"
+
+    mkdir -p $dir
+
+    cat > "$cnf" <<'EOF'
+[req]
+distinguished_name = req_dn
+x509_extensions    = v3_req
+prompt             = no
+
+[req_dn]
+CN = localhost
+
+[v3_req]
+subjectAltName = @alt_names
+basicConstraints = critical,CA:TRUE
+
+[alt_names]
+DNS.1 = localhost
+IP.1  = 127.0.0.1
+EOF
+
+    openssl req -x509 \
+        -newkey rsa:2048 \
+        -keyout "$SENTINEL_KEY" \
+        -out    "$SENTINEL_CERT" \
+        -days 1 \
+        -nodes \
+        -config "$cnf" \
+        > /dev/null 2>&1
+
+    if [ $? -ne 0 ]; then
+        echo "omsentinel_gen_certs: openssl failed" >&2
+        error_exit 1
+    fi
+    echo "omsentinel: TLS cert generated -> $SENTINEL_CERT"
+}
+
+# ---------------------------------------------------------------------------
+# omsentinel_start_server [port] [extra args…]
+#
+# Starts omsentinel_server.py.  Uses $SENTINEL_CERT / $SENTINEL_KEY for TLS.
+# Leaves port in $OMSENTINEL_PORT.
+# ---------------------------------------------------------------------------
+omsentinel_start_server() {
+    local server_py="$srcdir/omsentinel_server.py"
+    if [ ! -f "$server_py" ]; then
+        echo "omsentinel_start_server: cannot find $server_py" >&2
+        error_exit 1
+    fi
+
+    local port="${1:-0}"
+    local work_dir="$RSYSLOG_DYNNAME/omsentinel"
+    local port_file="$RSYSLOG_DYNNAME/omsentinel.port"
+    local log_file="$work_dir/server.log"
+    local pid_file="$work_dir/server.pid"
+
+    mkdir -p "$work_dir"
+
+    local tls_args=""
+    if [ -n "$SENTINEL_CERT" ] && [ -n "$SENTINEL_KEY" ]; then
+        tls_args="--certfile $SENTINEL_CERT --keyfile $SENTINEL_KEY"
+    fi
+
+    # Extra args start at $2
+    local extra_args="${*:2}"
+
+    timeout 30m $PYTHON "$server_py" \
+        -p "$port" \
+        $tls_args \
+        --port-file "$port_file" \
+        $extra_args \
+        >> "$log_file" 2>&1 &
+
+    OMSENTINEL_SERVER_PID=$!
+    echo "$OMSENTINEL_SERVER_PID" > "$pid_file"
+
+    wait_file_exists "$port_file"
+    OMSENTINEL_PORT="$(cat "$port_file")"
+
+    echo "omsentinel: mock server started (pid=$OMSENTINEL_SERVER_PID, port=$OMSENTINEL_PORT)"
+}
+
+# ---------------------------------------------------------------------------
+# omsentinel_stop_server
+# ---------------------------------------------------------------------------
+omsentinel_stop_server() {
+    local work_dir="$RSYSLOG_DYNNAME/omsentinel"
+    if [ -n "$OMSENTINEL_SERVER_PID" ]; then
+        kill "$OMSENTINEL_SERVER_PID" > /dev/null 2>&1
+    fi
+    rm -rf "$work_dir"
+}
+
+# ---------------------------------------------------------------------------
+# omsentinel_get_data
+#
+# GETs /test/data from the mock server and writes one msgnum per line
+# (numerically sorted) into $RSYSLOG_OUT_LOG, ready for seq_check.
+#
+# The server returns a JSON array of request-body strings; each body is itself
+# a JSON array of log-entry objects (the batch format omsentinel always uses).
+# ---------------------------------------------------------------------------
+omsentinel_get_data() {
+    local scheme="https"
+    local curl_opts=""
+    if [ -n "$SENTINEL_CERT" ]; then
+        curl_opts="--cacert $SENTINEL_CERT"
+    else
+        scheme="http"
+    fi
+
+    local url="${scheme}://127.0.0.1:${OMSENTINEL_PORT}/test/data"
+
+    # Each element of the outer array is a JSON array of log objects.
+    # Extract the "msgnum" field from every log object across all batches.
+    curl -s $curl_opts "$url" \
+        | $PYTHON -c "
+import json, sys
+batches = json.load(sys.stdin)
+nums = [entry['msgnum'] for batch in batches for entry in json.loads(batch)]
+print('\n'.join(nums))
+" \
+        | sort -n \
+        > "$RSYSLOG_OUT_LOG"
 }
 
 # prepare MySQL for next test
