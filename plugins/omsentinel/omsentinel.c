@@ -1007,6 +1007,7 @@ static rsRetVal ATTR_NONNULL()
 buildCurlHeaders(wrkrInstanceData_t *pWrkrData, sbool contentEncodeGzip)
 {
 	struct curl_slist *slist = NULL;
+	struct curl_slist *temp = NULL;
 
 	DEFiRet;
 
@@ -1017,27 +1018,31 @@ buildCurlHeaders(wrkrInstanceData_t *pWrkrData, sbool contentEncodeGzip)
 	// Configured headers..
 	if (pWrkrData->pData->headerBuf != NULL)
 	{
-		slist = curl_slist_append(slist, (char *)pWrkrData->pData->headerBuf);
-		CHKmalloc(slist);
+		temp = curl_slist_append(slist, (char *)pWrkrData->pData->headerBuf);
+		CHKmalloc(temp);
+		slist = temp;
 	}
 
 	if (pWrkrData->pData->httpHeader)
 	{
 		pthread_rwlock_rdlock(&pWrkrData->pData->authlock);
-		slist = curl_slist_append(slist, (char *)pWrkrData->pData->httpHeader);
+		temp = curl_slist_append(slist, (char *)pWrkrData->pData->httpHeader);
 		pthread_rwlock_unlock(&pWrkrData->pData->authlock);
-		CHKmalloc(slist);
+		CHKmalloc(temp);
+		slist = temp;
 	}
 
 	// When sending more than 1Kb, libcurl automatically sends an Except: 100-Continue header
 	// and will wait 1s for a response, could make this configurable but for now disable
-	slist = curl_slist_append(slist, HTTP_HEADER_EXPECT_EMPTY);
-	CHKmalloc(slist);
+	temp = curl_slist_append(slist, HTTP_HEADER_EXPECT_EMPTY);
+	CHKmalloc(temp);
+	slist = temp;
 
 	if (contentEncodeGzip)
 	{
-		slist = curl_slist_append(slist, HTTP_HEADER_ENCODING_GZIP);
-		CHKmalloc(slist);
+		temp = curl_slist_append(slist, HTTP_HEADER_ENCODING_GZIP);
+		CHKmalloc(temp);
+		slist = temp;
 	}
 
 	if (pWrkrData->curlHeader != NULL)
@@ -1084,6 +1089,7 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	}
 
 	headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
+	CHKmalloc(headers);
 	curl_easy_setopt(curl, CURLOPT_URL, pData->apiRestAuth);
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, message);
@@ -1193,8 +1199,14 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	}
 
 finalize_it:
-	curl_slist_free_all(headers);
-	curl_easy_cleanup(curl);
+	if (headers != NULL)
+	{
+		curl_slist_free_all(headers);
+	}
+	if (curl != NULL)
+	{
+		curl_easy_cleanup(curl);
+	}
 	RETiRet;
 }
 
@@ -1616,6 +1628,7 @@ static rsRetVal ATTR_NONNULL()
 curlSetup(wrkrInstanceData_t *const pWrkrData)
 {
 	struct curl_slist *slist = NULL;
+	struct curl_slist *temp = NULL;
 
 	DEFiRet;
 
@@ -1623,29 +1636,41 @@ curlSetup(wrkrInstanceData_t *const pWrkrData)
 
 	if (pWrkrData->pData->headerBuf != NULL)
 	{
-		slist = curl_slist_append(slist, (char *)pWrkrData->pData->headerBuf);
-		CHKmalloc(slist);
+		temp = curl_slist_append(slist, (char *)pWrkrData->pData->headerBuf);
+		CHKmalloc(temp);
+		slist = temp;
 	}
 
 	if (pWrkrData->pData->httpHeader)
 	{
 		pthread_rwlock_rdlock(&pWrkrData->pData->authlock);
-		slist = curl_slist_append(slist, (char *)pWrkrData->pData->httpHeader);
+		temp = curl_slist_append(slist, (char *)pWrkrData->pData->httpHeader);
 		pthread_rwlock_unlock(&pWrkrData->pData->authlock);
-		CHKmalloc(slist);
+		CHKmalloc(temp);
+		slist = temp;
 	}
 
 	// When sending more than 1Kb, libcurl automatically sends an Except: 100-Continue header
 	// and will wait 1s for a response, could make this configurable but for now disable
-	slist = curl_slist_append(slist, HTTP_HEADER_EXPECT_EMPTY);
+	temp = curl_slist_append(slist, HTTP_HEADER_EXPECT_EMPTY);
+	CHKmalloc(temp);
+	slist = temp;
+
 	pWrkrData->curlHeader = slist;
 	CHKmalloc(pWrkrData->curlPostHandle = curl_easy_init());
 	curlPostSetup(pWrkrData);
 finalize_it:
-	if (iRet != RS_RET_OK && pWrkrData->curlPostHandle != NULL)
+	if (iRet != RS_RET_OK)
 	{
-		curl_easy_cleanup(pWrkrData->curlPostHandle);
-		pWrkrData->curlPostHandle = NULL;
+		if (pWrkrData->curlPostHandle != NULL)
+		{
+			curl_easy_cleanup(pWrkrData->curlPostHandle);
+			pWrkrData->curlPostHandle = NULL;
+		}
+		if (slist)
+		{
+			curl_slist_free_all(slist);
+		}
 	}
 	RETiRet;
 }
