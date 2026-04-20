@@ -171,7 +171,6 @@ typedef struct wrkrInstanceData
 	int replyLen;
 	char *reply;
 	long httpStatusCode;	   /* http status code of response */
-	CURL *curlCheckConnHandle; /* libcurl session handle for checking the server connection */
 	CURL *curlPostHandle;	   /* libcurl session handle for posting data to the server */
 	HEADER *curlHeader;		   /* json POST request info */
 	uchar *restURL;			   /* last used URL for error reporting */
@@ -231,7 +230,6 @@ static struct cnfparamblk actpblk =
 
 static rsRetVal curlSetup(wrkrInstanceData_t *pWrkrData);
 static void curlCleanup(wrkrInstanceData_t *pWrkrData);
-static void curlCheckConnSetup(wrkrInstanceData_t *const pWrkrData);
 size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp);
 static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message);
 static rsRetVal initAuth(wrkrInstanceData_t *pWrkrData);
@@ -271,7 +269,6 @@ CODESTARTcreateWrkrInstance
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
 	pWrkrData->curlHeader = NULL;
 	pWrkrData->curlPostHandle = NULL;
-	pWrkrData->curlCheckConnHandle = NULL;
 	pWrkrData->serverIndex = 0;
 	pWrkrData->httpStatusCode = 0;
 	pWrkrData->restURL = NULL;
@@ -1005,7 +1002,6 @@ finalize_it:
 
 /* Some duplicate code to curlSetup, but we need to add the gzip content-encoding
  * header at runtime, and if the compression fails, we do not want to send it.
- * Additionally, the curlCheckConnHandle should not be configured with a gzip header.
  */
 static rsRetVal ATTR_NONNULL()
 buildCurlHeaders(wrkrInstanceData_t *pWrkrData, sbool contentEncodeGzip)
@@ -1589,13 +1585,6 @@ curlSetupCommon(wrkrInstanceData_t *const pWrkrData, CURL *const handle)
 	curl_easy_setopt(handle, CURLOPT_VERBOSE, TRUE); */
 }
 
-static void ATTR_NONNULL()
-curlCheckConnSetup(wrkrInstanceData_t *const pWrkrData)
-{
-	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
-	curlSetupCommon(pWrkrData, pWrkrData->curlCheckConnHandle);
-}
-
 static void ATTR_NONNULL(1)
 curlPostSetup(wrkrInstanceData_t *const pWrkrData)
 {
@@ -1652,10 +1641,6 @@ curlSetup(wrkrInstanceData_t *const pWrkrData)
 	pWrkrData->curlHeader = slist;
 	CHKmalloc(pWrkrData->curlPostHandle = curl_easy_init());
 	curlPostSetup(pWrkrData);
-
-	CHKmalloc(pWrkrData->curlCheckConnHandle = curl_easy_init());
-	curlCheckConnSetup(pWrkrData);
-
 finalize_it:
 	if (iRet != RS_RET_OK && pWrkrData->curlPostHandle != NULL)
 	{
@@ -1672,11 +1657,6 @@ curlCleanup(wrkrInstanceData_t *const pWrkrData)
 	{
 		curl_slist_free_all(pWrkrData->curlHeader);
 		pWrkrData->curlHeader = NULL;
-	}
-	if (pWrkrData->curlCheckConnHandle != NULL)
-	{
-		curl_easy_cleanup(pWrkrData->curlCheckConnHandle);
-		pWrkrData->curlCheckConnHandle = NULL;
 	}
 	if (pWrkrData->curlPostHandle != NULL)
 	{
