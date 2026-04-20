@@ -104,6 +104,7 @@ typedef struct instanceConf_s
 	uchar *client_id;	// client_id generated from app registration
 	uchar *client_secret;	// client_secret generated from app registration
 	uchar *scope;		// wanted resource
+	pthread_rwlock_t authlock;
 	uchar *grant_type;	// auth type
 	uchar *auth_domain;
 	time_t authExp;
@@ -255,6 +256,7 @@ BEGINcreateInstance
 CODESTARTcreateInstance
 	pData->fdErrFile = -1;
 	pthread_mutex_init(&pData->mutErrFile, NULL);
+	pthread_rwlock_init(&pData->authlock, NULL);
 	pData->caCertFile = NULL;
 	pData->myCertFile = NULL;
 	pData->myPrivKeyFile = NULL;
@@ -355,6 +357,7 @@ CODESTARTfreeInstance
 		close(pData->fdErrFile);
 	}
 	pthread_mutex_destroy(&pData->mutErrFile);
+	pthread_rwlock_destroy(&pData->authlock);
 	free(pData->httpHeader);
 	free(pData->authBuf);
 	free(pData->headerBuf);
@@ -1024,7 +1027,9 @@ buildCurlHeaders(wrkrInstanceData_t *pWrkrData, sbool contentEncodeGzip)
 
 	if (pWrkrData->pData->httpHeader)
 	{
+		pthread_rwlock_rdlock(&pWrkrData->pData->authlock);
 		slist = curl_slist_append(slist, (char *)pWrkrData->pData->httpHeader);
+		pthread_rwlock_unlock(&pWrkrData->pData->authlock);
 		CHKmalloc(slist);
 	}
 
@@ -1075,7 +1080,7 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	DEFiRet;
 
 	curl = curl_easy_init();
-	
+
 	if (curl == NULL)
 	{
 		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: Failed to initialize libcurl during authentication");
@@ -1118,7 +1123,7 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 		dbgprintf("omsentinel: http_reply_code=%ld \n", http_code);
 		ABORT_FINALIZE(RS_RET_SUSPENDED);
 	}
-	
+
 
 	// parsing and serializing http response
 	if(pData->authReply){
@@ -1142,14 +1147,14 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 				}
 				else
 				{
-					LogError(0, RS_RET_SUSPENDED, 
+					LogError(0, RS_RET_SUSPENDED,
 						"omsentinel: 'access_token' value is NULL in JSON reply : %s\n", pData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 				}
 			}
 			else
 			{
-				LogError(0, RS_RET_SUSPENDED, 
+				LogError(0, RS_RET_SUSPENDED,
 						"omsentinel: failed to parse JSON from http response: %s\n", pData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 			}
@@ -1164,16 +1169,16 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 				}
 				else
 				{
-					LogError(0, RS_RET_SUSPENDED, 
+					LogError(0, RS_RET_SUSPENDED,
 						"omsentinel: 'expires_in' value is NULL in JSON reply : %s\n", pData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 				}
 			}
 			else
 			{
-				LogError(0, RS_RET_SUSPENDED, 
+				LogError(0, RS_RET_SUSPENDED,
 						"omsentinel: failed to parse JSON from http response: %s\n", pData->authReply);
-						ABORT_FINALIZE(RS_RET_SUSPENDED); 
+						ABORT_FINALIZE(RS_RET_SUSPENDED);
 			}
 			json_object_put(parsed_json);
 		}
@@ -1202,30 +1207,39 @@ static rsRetVal initAuth(wrkrInstanceData_t *pWrkrData)
 	instanceData *pData = pWrkrData->pData;
 	DEFiRet;
 
-	if (time(NULL) >= pData->authExp)
+	pthread_rwlock_rdlock(&pData->authlock);
+
+	// Renew token if time to live is less than 5 seconds
+	if ((time(NULL) + 5) >= pData->authExp)
 	{
-		if (pData->authReply)
+		pthread_rwlock_unlock(&pData->authlock);
+		pthread_rwlock_wrlock(&pData->authlock);
+		// Recheck conditions to avoid TOC/TOU conditions
+		if ((time(NULL) + 5) >= pData->authExp)
 		{
-			free(pData->authReply);
-		}
-		if (pData->token)
-		{
-			free(pData->token);
-		}
-		if (pData->httpHeader)
-		{
-			free(pData->httpHeader);
-		}
+			if (pData->authReply)
+			{
+				free(pData->authReply);
+			}
+			if (pData->token)
+			{
+				free(pData->token);
+			}
+			if (pData->httpHeader)
+			{
+				free(pData->httpHeader);
+			}
 
-		// nullify to prevent dangling pointers
-		pData->token = NULL;
-		pData->authReply = NULL;
-		pData->httpHeader = NULL;
-	
+			// nullify to prevent dangling pointers
+			pData->token = NULL;
+			pData->authReply = NULL;
+			pData->httpHeader = NULL;
 
-		CHKiRet(curlAuth(pWrkrData, pData->authParams));
+			CHKiRet(curlAuth(pWrkrData, pData->authParams));
+		}
 	}
 finalize_it:
+	pthread_rwlock_unlock(&pData->authlock);
 	RETiRet;
 }
 
@@ -1626,7 +1640,9 @@ curlSetup(wrkrInstanceData_t *const pWrkrData)
 
 	if (pWrkrData->pData->httpHeader)
 	{
+		pthread_rwlock_rdlock(&pWrkrData->pData->authlock);
 		slist = curl_slist_append(slist, (char *)pWrkrData->pData->httpHeader);
+		pthread_rwlock_unlock(&pWrkrData->pData->authlock);
 		CHKmalloc(slist);
 	}
 
