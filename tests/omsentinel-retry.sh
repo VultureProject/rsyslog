@@ -3,7 +3,7 @@
 # Verifies that the module suspends and eventually delivers all messages when
 # the ingest endpoint returns 500 errors periodically.
 #
-# The server fails every 50th ingest POST.  With action.resumeRetryCount="-1"
+# The server fails every 10th ingest (of bulks of 100 messages at most) POST.  With action.resumeRetryCount="-1"
 # rsyslog retries indefinitely, so every message must eventually arrive.
 . ${srcdir:=.}/diag.sh init
 
@@ -38,7 +38,7 @@ if $msg contains "msgnum:" then
         auth_domain="127.0.0.1:'$OMSENTINEL_PORT'"
         tls.cacert="'$SENTINEL_CERT'"
 
-        batch.maxsize="100"
+        queue.dequeueBatchSize="100"
         action.resumeRetryCount="-1"
         action.resumeInterval="0"
     )

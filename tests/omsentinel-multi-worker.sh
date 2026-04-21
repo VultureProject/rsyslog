@@ -1,6 +1,6 @@
 #!/bin/bash
-# omsentinel-basic.sh
-# Sends NUMMESSAGES individually (batch.maxsize=1), verifies all arrive.
+# omsentinel-multi-worker.sh
+# Sends NUMMESSAGES individually (queue.dequeueBatchSize=1) on multiple workers (queue.workerThreads="4"), verifies all arrive.
 . ${srcdir:=.}/diag.sh init
 
 omsentinel_gen_certs
@@ -31,7 +31,7 @@ if $msg contains "msgnum:" then
         auth_domain="127.0.0.1:'$OMSENTINEL_PORT'"
         tls.cacert="'$SENTINEL_CERT'"
 
-        batch.maxsize="1"
+        queue.dequeueBatchSize="1"
         action.resumeRetryCount="-1"
         queue.type="FixedArray"
         queue.workerThreads="4"

@@ -1,6 +1,6 @@
 #!/bin/bash
-# omsentinel-token-refresh.sh
-# Verifies that the module re-fetches the OAuth2 token when it expires.
+# omsentinel-multi-token-refresh.sh
+# Verifies that the module re-fetches the OAuth2 token when it expires, with several workers running.
 #
 # Strategy: start the server with --token-expire-secs=2.  Inject messages in
 # two waves with a sleep in between so the first token has definitely expired
@@ -37,7 +37,7 @@ if $msg contains "msgnum:" then
         auth_domain="127.0.0.1:'$OMSENTINEL_PORT'"
         tls.cacert="'$SENTINEL_CERT'"
 
-        batch.maxsize="10"
+        queue.dequeueBatchSize="10"
         action.resumeRetryCount="-1"
         queue.type="FixedArray"
         queue.workerThreads="4"

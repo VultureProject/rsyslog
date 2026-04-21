@@ -34,8 +34,7 @@ if $msg contains "msgnum:" then
         auth_domain="127.0.0.1:'$OMSENTINEL_PORT'"
         tls.cacert="'$SENTINEL_CERT'"
 
-        batch.maxsize="100"
-        batch.maxbytes="1048576"
+        queue.dequeueBatchSize="100"
         action.resumeRetryCount="-1"
     )
 '
