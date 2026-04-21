@@ -180,7 +180,6 @@ typedef struct wrkrInstanceData
 	{
 		uchar **data;	  /* array of strings, this will be batched up lazily */
 		uchar *restPath;  /* Helper for restpath in batch mode */
-		size_t sizeBytes; /* total length of this batch in bytes */
 		size_t nmemb;	  /* number of messages in batch (for statistics counting) */
 
 	} batch;
@@ -277,7 +276,6 @@ CODESTARTcreateWrkrInstance
 
 	//batch
 	pWrkrData->batch.nmemb = 0;
-	pWrkrData->batch.sizeBytes = 0;
 	batchData = (uchar **)malloc(pData->maxBatchSize * sizeof(uchar *));
 	if (batchData == NULL)
 	{
@@ -1316,9 +1314,6 @@ serializeBatchJsonArray(wrkrInstanceData_t *pWrkrData, char **batchBuf)
 	fjson_object *batchArray = NULL;
 	fjson_object *msgObj = NULL;
 	size_t numMessages = pWrkrData->batch.nmemb;
-	size_t sizeTotal = pWrkrData->batch.sizeBytes + numMessages + 1; // messages + brackets + commas
-	DBGPRINTF("omsentinel: serializeBatchJsonArray numMessages=%zd sizeTotal=%zd\n", numMessages, sizeTotal);
-
 	DEFiRet;
 
 	batchArray = fjson_object_new_array();
@@ -1342,7 +1337,9 @@ serializeBatchJsonArray(wrkrInstanceData_t *pWrkrData, char **batchBuf)
 	}
 
 	const char *batchString = fjson_object_to_json_string_ext(batchArray, FJSON_TO_STRING_PLAIN);
-	*batchBuf = strndup(batchString, strlen(batchString));
+	const size_t sizeTotal = strlen(batchString);
+	DBGPRINTF("omsentinel: serializeBatchJsonArray numMessages=%zd sizeTotal=%zd\n", numMessages, sizeTotal);
+	*batchBuf = strndup(batchString, sizeTotal);
 
 finalize_it:
 	if (batchArray != NULL)
@@ -1373,7 +1370,6 @@ computeBatchSize(wrkrInstanceData_t *pWrkrData)
 static void ATTR_NONNULL()
 initializeBatch(wrkrInstanceData_t *pWrkrData)
 {
-	pWrkrData->batch.sizeBytes = 0;
 	pWrkrData->batch.nmemb = 0;
 	if (pWrkrData->batch.restPath != NULL)
 	{
