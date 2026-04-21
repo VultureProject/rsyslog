@@ -666,6 +666,13 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 		else if (statusCode >= 400 && statusCode < 500)
 		{
 			STATSCOUNTER_INC(pData->ctrHttpRequestsStatus4xx, pData->mutCtrHttpRequestsStatus4xx);
+			if (statusCode == 401)
+			{
+				pthread_rwlock_wrlock(&pData->authlock);
+				pData->authExp = 0;
+				pthread_rwlock_unlock(&pData->authlock);
+				LogMsg(0, iRet, LOG_WARNING, "omsentinel: Received 401, token expired");
+			}
 		}
 		else if (statusCode >= 500 && statusCode < 600)
 		{
