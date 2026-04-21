@@ -291,50 +291,7 @@ CODESTARTcreateWrkrInstance
 		pWrkrData->batch.restPath = NULL;
 	}
 
-
-	// Log ingestion config parsing
-	if (pData->dce && pData->dcr && pData->stream_name)
-	{
-		if (asprintf((char **)&pData->baseURL, "https://%s", pData->dce) < 0)
-		{
-			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for base URL\n");
-			ABORT_FINALIZE(RS_RET_ERR);
-		}
-		if (asprintf((char **)&pData->restPath, "/dataCollectionRules/%s/streams/%s?api-version=2023-01-01", pData->dcr, pData->stream_name) < 0)
-		{
-			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for rest path\n");
-			ABORT_FINALIZE(RS_RET_ERR);
-		}
-	}
-	else
-	{
-		LogError(0, RS_RET_PARAM_ERROR,
-				"omsentinel: Parameters missings 'dcr, dce, stream_name'");
-		ABORT_FINALIZE(RS_RET_ERR);
-	}
-
-	// Authentification
-	if (pData->scope && pData->client_secret && pData->client_id && pData->grant_type && pData->tenant_id)
-	{
-		if (asprintf((char **)&pData->apiRestAuth, "https://%s/%s/oauth2/v2.0/token",pData->auth_domain,pData->tenant_id) < 0)
-		{
-			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth api\n");
-			ABORT_FINALIZE(RS_RET_ERR);
-		}
-
-		if (asprintf((char **)&pData->authParams, "scope=%s&client_secret=%s&client_id=%s&grant_type=%s", pData->scope, pData->client_secret, pData->client_id, pData->grant_type) < 0)
-		{
-			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth params\n");
-			ABORT_FINALIZE(RS_RET_ERR);
-		}
-
-		curlAuth(pWrkrData, pData->authParams);
-	}
-	else
-	{
-		LogError(0, RS_RET_PARAM_ERROR, "parameters missings 'scope, client_secret, client_id, grant_type, tenant_id'");
-	}
-
+	initAuth(pWrkrData);
 	initCompressCtx(pWrkrData);
 	iRet = curlSetup(pWrkrData);
 
@@ -1978,6 +1935,47 @@ CODESTARTnewActInst
 		{
 			pData->proxyHost = ustrdup(http_proxy);
 		}
+	}
+
+	// Log ingestion config parsing
+	if (pData->dce && pData->dcr && pData->stream_name)
+	{
+		if (asprintf((char **)&pData->baseURL, "https://%s", pData->dce) < 0)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for base URL\n");
+			ABORT_FINALIZE(RS_RET_ERR);
+		}
+		if (asprintf((char **)&pData->restPath, "/dataCollectionRules/%s/streams/%s?api-version=2023-01-01", pData->dcr, pData->stream_name) < 0)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for rest path\n");
+			ABORT_FINALIZE(RS_RET_ERR);
+		}
+	}
+	else
+	{
+		LogError(0, RS_RET_PARAM_ERROR,
+				"omsentinel: Parameters missings 'dcr, dce, stream_name'");
+		ABORT_FINALIZE(RS_RET_ERR);
+	}
+
+	// Authentification
+	if (pData->scope && pData->client_secret && pData->client_id && pData->grant_type && pData->tenant_id)
+	{
+		if (asprintf((char **)&pData->apiRestAuth, "https://%s/%s/oauth2/v2.0/token",pData->auth_domain,pData->tenant_id) < 0)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth api\n");
+			ABORT_FINALIZE(RS_RET_ERR);
+		}
+
+		if (asprintf((char **)&pData->authParams, "scope=%s&client_secret=%s&client_id=%s&grant_type=%s", pData->scope, pData->client_secret, pData->client_id, pData->grant_type) < 0)
+		{
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth params\n");
+			ABORT_FINALIZE(RS_RET_ERR);
+		}
+	}
+	else
+	{
+		LogError(0, RS_RET_PARAM_ERROR, "parameters missings 'scope, client_secret, client_id, grant_type, tenant_id'");
 	}
 
 	DBGPRINTF("omsentinel: requesting %d templates\n", iNumTpls);
