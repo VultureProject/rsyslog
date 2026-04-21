@@ -4,6 +4,7 @@
 # arrive and are correctly reassembled by the inspection endpoint.
 . ${srcdir:=.}/diag.sh init
 
+export TB_TEST_MAX_RUNTIME=30
 export NUMMESSAGES=1000
 
 omsentinel_gen_certs

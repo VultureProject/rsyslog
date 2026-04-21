@@ -8,6 +8,7 @@
 # proving initAuth() triggered a refresh mid-run.
 . ${srcdir:=.}/diag.sh init
 
+export TB_TEST_MAX_RUNTIME=30
 export NUMMESSAGES=200
 
 omsentinel_gen_certs

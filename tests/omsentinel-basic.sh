@@ -6,6 +6,7 @@
 omsentinel_gen_certs
 omsentinel_start_server 0
 
+export TB_TEST_MAX_RUNTIME=30
 export NUMMESSAGES=10
 
 generate_conf

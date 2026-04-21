@@ -7,6 +7,7 @@
 # rsyslog retries indefinitely, so every message must eventually arrive.
 . ${srcdir:=.}/diag.sh init
 
+export TB_TEST_MAX_RUNTIME=30
 export NUMMESSAGES=5000
 
 omsentinel_gen_certs
