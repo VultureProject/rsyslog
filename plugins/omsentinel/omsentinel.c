@@ -110,6 +110,7 @@ typedef struct instanceConf_s
 	time_t authExp;
 	uchar *apiRestAuth;
 	uchar *authReply;
+	size_t authReplyLen;
 	uchar *token;
 	uchar *baseURL;
 	uchar *authParams;	// auth purpose
@@ -999,11 +1000,21 @@ finalize_it:
 size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp)
 {
 	instanceData *pData = (instanceData *)userp;
-	size_t totalSize = size * nmemb;
+	size_t msgSize = size * nmemb;
 
-	pData->authReply = (uchar *)strdup((const char *)contents);
+	uchar *new_alloc = realloc(pData->authReply, pData->authReplyLen + msgSize + 1);
+	if (new_alloc == NULL)
+	{
+		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: Allocation error on auth callback!");
+		return 0;
+	}
 
-	return totalSize;
+	pData->authReply = new_alloc;
+	memcpy(&(pData->authReply[pData->authReplyLen]), contents, msgSize);
+	pData->authReplyLen += msgSize;
+	pData->authReply[pData->authReplyLen] = 0;
+
+	return msgSize;
 }
 
 static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
@@ -1176,6 +1187,7 @@ static rsRetVal initAuth(wrkrInstanceData_t *pWrkrData)
 			// nullify to prevent dangling pointers
 			pData->token = NULL;
 			pData->authReply = NULL;
+			pData->authReplyLen = 0;
 			pData->httpHeader = NULL;
 
 			CHKiRet(curlAuth(pWrkrData, pData->authParams));
@@ -1536,6 +1548,7 @@ setInstParamDefaults(instanceData *const pData)
 	pData->authExp = 0;
 	pData->apiRestAuth = NULL;
 	pData->authReply = NULL;
+	pData->authReplyLen = 0;
 	pData->token = NULL;
 	pData->authParams = NULL;
 	pData->httpHeader = NULL;
