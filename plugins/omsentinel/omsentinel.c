@@ -123,8 +123,6 @@ typedef struct instanceConf_s
 	int proxyPort;
 	uchar *tplName;
 	uchar *errorFile;
-	size_t maxBatchBytes;
-	size_t maxBatchSize;
 	sbool compress;
 	int compressionLevel;	// Compression level for zlib, default=-1, fastest=1, best=9, none=0
 	uchar *caCertFile;
@@ -205,8 +203,6 @@ static struct cnfparamdescr actpdescr[] = {
 	{"auth_domain", eCmdHdlrGetWord, 0},
 	{"proxyhost", eCmdHdlrString, 0},
 	{"proxyport", eCmdHdlrInt, 0},
-	{"batch.maxbytes", eCmdHdlrSize, 0},
-	{"batch.maxsize", eCmdHdlrSize, 0},
 	{"compress", eCmdHdlrBinary, 0},
 	{"compress.level", eCmdHdlrInt, 0},
 	{"errorfile", eCmdHdlrGetWord, 0},
@@ -263,7 +259,6 @@ CODESTARTcreateInstance
 ENDcreateInstance
 
 BEGINcreateWrkrInstance
-	uchar **batchData;
 CODESTARTcreateWrkrInstance
 	PTR_ASSERT_SET_TYPE(pWrkrData, WRKR_DATA_TYPE_ES);
 	pWrkrData->curlHeader = NULL;
@@ -273,27 +268,15 @@ CODESTARTcreateWrkrInstance
 	pWrkrData->restURL = NULL;
 	pWrkrData->bzInitDone = 0;
 
-
-	//batch
+	//batch initial allocation
 	pWrkrData->batch.nmemb = 0;
-	batchData = (uchar **)malloc(pData->maxBatchSize * sizeof(uchar *));
-	if (batchData == NULL)
-	{
-		LogError(0, RS_RET_OUT_OF_MEMORY,
-				"omsentinel: cannot allocate memory for batch queue\n");
-		ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
-	}
-	else
-	{
-		pWrkrData->batch.data = batchData;
-		pWrkrData->batch.restPath = NULL;
-	}
+	pWrkrData->batch.data = NULL;
+	pWrkrData->batch.restPath = NULL;
 
 	initAuth(pWrkrData);
 	initCompressCtx(pWrkrData);
 	iRet = curlSetup(pWrkrData);
 
-finalize_it:
 ENDcreateWrkrInstance
 
 BEGINisCompatibleWithFeature
@@ -771,19 +754,16 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 			ABORT_FINALIZE(iRet);
 		}
 
-		if (pData->maxBatchSize > 1)
+		// Write each message back to retry ruleset if configured
+		if (pData->retryFailures && pData->retryRuleset != NULL)
 		{
-			// Write each message back to retry ruleset if configured
-			if (pData->retryFailures && pData->retryRuleset != NULL)
+			// Retry stats counted inside this function call
+			iRet = queueBatchOnRetryRuleset(pWrkrData, pData);
+			if (iRet != RS_RET_OK)
 			{
-				// Retry stats counted inside this function call
-				iRet = queueBatchOnRetryRuleset(pWrkrData, pData);
-				if (iRet != RS_RET_OK)
-				{
-					LogMsg(0, iRet, LOG_ERR,
-						   "omsentinel: checkResult error while queueing to retry ruleset"
-						   "some messages may be lost");
-				}
+				LogMsg(0, iRet, LOG_ERR,
+						"omsentinel: checkResult error while queueing to retry ruleset"
+						"some messages may be lost");
 			}
 			iRet = RS_RET_OK; // We've done all we can tell rsyslog to carry on
 		}
@@ -1569,8 +1549,6 @@ setInstParamDefaults(instanceData *const pData)
 	pData->restPath = NULL;
 	pData->proxyHost = NULL;
 	pData->proxyPort = 0;
-	pData->maxBatchBytes = 10485760;	// i.e. 10 MB Is the default max message size for AWS API Gateway
-	pData->maxBatchSize = 1;		// 100 messages
 	pData->compress = 0;			// off
 	pData->compressionLevel = -1;		// default compression
 	pData->tplName = NULL;
@@ -1670,14 +1648,6 @@ CODESTARTnewActInst
 		else if (!strcmp(actpblk.descr[i].name, "proxyport"))
 		{
 			pData->proxyPort = (int)pvals[i].val.d.n;
-		}
-		else if (!strcmp(actpblk.descr[i].name, "batch.maxbytes"))
-		{
-			pData->maxBatchBytes = (size_t)pvals[i].val.d.n;
-		}
-		else if (!strcmp(actpblk.descr[i].name, "batch.maxsize"))
-		{
-			pData->maxBatchSize = (size_t)pvals[i].val.d.n;
 		}
 		else if (!strcmp(actpblk.descr[i].name, "compress"))
 		{
