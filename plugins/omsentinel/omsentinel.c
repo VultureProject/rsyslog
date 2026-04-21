@@ -228,7 +228,7 @@ static rsRetVal curlSetup(wrkrInstanceData_t *pWrkrData);
 static void curlCleanup(wrkrInstanceData_t *pWrkrData);
 size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp);
 static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message);
-static rsRetVal initAuth(wrkrInstanceData_t *pWrkrData);
+static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData);
 
 /* compressCtx functions */
 static void ATTR_NONNULL()
@@ -274,7 +274,7 @@ CODESTARTcreateWrkrInstance
 	pWrkrData->batch.data = NULL;
 	pWrkrData->batch.restPath = NULL;
 
-	initAuth(pWrkrData);
+	checkAuth(pWrkrData);
 	initCompressCtx(pWrkrData);
 	iRet = curlSetup(pWrkrData);
 
@@ -386,7 +386,7 @@ curlResult(void *ptr, size_t size, size_t nmemb, void *userdata)
 BEGINtryResume
 CODESTARTtryResume
 	DBGPRINTF("omsentinel: tryResume called\n");
-	CHKiRet(initAuth(pWrkrData));
+	CHKiRet(checkAuth(pWrkrData));
 finalize_it:
 ENDtryResume
 
@@ -1167,7 +1167,7 @@ finalize_it:
 	RETiRet;
 }
 
-static rsRetVal initAuth(wrkrInstanceData_t *pWrkrData)
+static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData)
 {
 	instanceData *pData = pWrkrData->pData;
 	DEFiRet;
@@ -1393,7 +1393,7 @@ finalize_it:
 BEGINbeginTransaction
 CODESTARTbeginTransaction
 	initializeBatch(pWrkrData);
-	iRet = initAuth(pWrkrData);
+	iRet = checkAuth(pWrkrData);
 ENDbeginTransaction
 
 BEGINcommitTransaction
