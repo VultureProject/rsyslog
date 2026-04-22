@@ -204,6 +204,8 @@ static struct cnfparamdescr actpdescr[] = {
 	{"auth_domain", eCmdHdlrGetWord, 0},
 	{"proxyhost", eCmdHdlrString, 0},
 	{"proxyport", eCmdHdlrInt, 0},
+	{"batch.maxbytes", eCmdHdlrSize, 0},
+	{"batch.maxsize", eCmdHdlrSize, 0},
 	{"compress", eCmdHdlrBinary, 0},
 	{"compress.level", eCmdHdlrInt, 0},
 	{"errorfile", eCmdHdlrGetWord, 0},
@@ -1672,6 +1674,16 @@ CODESTARTnewActInst
 		else if (!strcmp(actpblk.descr[i].name, "proxyport"))
 		{
 			pData->proxyPort = (int)pvals[i].val.d.n;
+		}
+		else if (!strcmp(actpblk.descr[i].name, "batch.maxbytes"))
+		{
+			LogMsg(0, RS_RET_DEPRECATED, LOG_WARNING, "omsentinel: 'batch.maxbytes' is deprecated "
+				"and will be ignored!");
+		}
+		else if (!strcmp(actpblk.descr[i].name, "batch.maxsize"))
+		{
+			LogMsg(0, RS_RET_DEPRECATED, LOG_WARNING, "omsentinel: 'batch.maxsize' is deprecated, "
+				"please use 'queue.dequeueBatchSize' instead");
 		}
 		else if (!strcmp(actpblk.descr[i].name, "compress"))
 		{
