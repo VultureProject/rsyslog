@@ -177,7 +177,6 @@ typedef struct wrkrInstanceData
 	struct
 	{
 		uchar **data;	  /* array of strings, this will be batched up lazily */
-		uchar *restPath;  /* Helper for restpath in batch mode */
 		size_t nmemb;	  /* number of messages in batch (for statistics counting) */
 
 	} batch;
@@ -273,7 +272,6 @@ CODESTARTcreateWrkrInstance
 	//batch initial allocation
 	pWrkrData->batch.nmemb = 0;
 	pWrkrData->batch.data = NULL;
-	pWrkrData->batch.restPath = NULL;
 
 	checkAuth(pWrkrData);
 	initCompressCtx(pWrkrData);
@@ -344,11 +342,7 @@ CODESTARTfreeWrkrInstance
 	free(pWrkrData->batch.data);
 	pWrkrData->batch.data = NULL;
 
-	if (pWrkrData->batch.restPath != NULL)
-	{
-		free(pWrkrData->batch.restPath);
-		pWrkrData->batch.restPath = NULL;
-	}
+
 
 	if (pWrkrData->bzInitDone)
 	{
@@ -394,7 +388,6 @@ ENDtryResume
 static rsRetVal ATTR_NONNULL(1)
 setPostURL(wrkrInstanceData_t *const pWrkrData)
 {
-	uchar *restPath;
 	char *baseUrl;
 	es_str_t *url;
 	int r;
@@ -410,23 +403,7 @@ setPostURL(wrkrInstanceData_t *const pWrkrData)
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 
-	if (pWrkrData->batch.restPath != NULL)
-	{
-		/* get from batch if set! */
-		restPath = pWrkrData->batch.restPath;
-	}
-	else
-	{
-		restPath = pData->restPath;
-	}
-
-	r = 0;
-	if (restPath != NULL)
-	{
-		r = es_addBuf(&url, (char *)restPath, ustrlen(restPath));
-	}
-
-	if (r != 0)
+	if ((r = es_addBuf(&url, (char *)pData->restPath, ustrlen(pData->restPath))) != 0)
 	{
 		LogError(0, RS_RET_ERR, "omsentinel: failure in creating restURL, "
 								"error code: %d",
@@ -1348,18 +1325,6 @@ finalize_it:
 	RETiRet;
 }
 
-
-static void ATTR_NONNULL()
-initializeBatch(wrkrInstanceData_t *pWrkrData)
-{
-	pWrkrData->batch.nmemb = 0;
-	if (pWrkrData->batch.restPath != NULL)
-	{
-		free(pWrkrData->batch.restPath);
-		pWrkrData->batch.restPath = NULL;
-	}
-}
-
 static rsRetVal
 submitBatch(wrkrInstanceData_t *pWrkrData)
 {
@@ -1387,7 +1352,8 @@ finalize_it:
 
 BEGINbeginTransaction
 CODESTARTbeginTransaction
-	initializeBatch(pWrkrData);
+	// Reset batch member of stored elements (but don't free batch space)
+	pWrkrData->batch.nmemb = 0;
 	iRet = checkAuth(pWrkrData);
 ENDbeginTransaction
 
