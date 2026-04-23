@@ -116,7 +116,6 @@ typedef struct instanceConf_s
 	uchar *authParams;	// auth purpose
 	int fdErrFile;		// error file fd or -1 if not open
 	pthread_mutex_t mutErrFile;
-	uchar *authBuf;
 	uchar *headerBuf;
 	uchar *httpHeader;
 	uchar *restPath;
@@ -297,7 +296,6 @@ CODESTARTfreeInstance
 	pthread_mutex_destroy(&pData->mutErrFile);
 	pthread_rwlock_destroy(&pData->authlock);
 	free(pData->httpHeader);
-	free(pData->authBuf);
 	free(pData->headerBuf);
 	free(pData->restPath);
 	free(pData->client_id);		// sentinel auth
@@ -1062,11 +1060,6 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	{
 		curl_easy_setopt(curl, CURLOPT_PROXYPORT, pData->proxyPort);
 	}
-	if (pData->authBuf != NULL)
-	{
-		curl_easy_setopt(curl, CURLOPT_USERPWD, pData->authBuf);
-		curl_easy_setopt(curl, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
-	}
 	if (pData->caCertFile != NULL)
 	{
 		curl_easy_setopt(curl, CURLOPT_CAINFO, pData->caCertFile);
@@ -1438,11 +1431,6 @@ curlSetupCommon(wrkrInstanceData_t *const pWrkrData, CURL *const handle)
 	{
 		curl_easy_setopt(handle, CURLOPT_PROXYPORT, pWrkrData->pData->proxyPort);
 	}
-	if (pWrkrData->pData->authBuf != NULL)
-	{
-		curl_easy_setopt(handle, CURLOPT_USERPWD, pWrkrData->pData->authBuf);
-		curl_easy_setopt(handle, CURLOPT_PROXYAUTH, CURLAUTH_ANY);
-	}
 	if (pWrkrData->pData->caCertFile)
 	{
 		curl_easy_setopt(handle, CURLOPT_CAINFO, pWrkrData->pData->caCertFile);
@@ -1566,7 +1554,6 @@ setInstParamDefaults(instanceData *const pData)
 	pData->token = NULL;
 	pData->authParams = NULL;
 	pData->httpHeader = NULL;
-	pData->authBuf = NULL;
 	pData->client_id = NULL;
 	pData->tenant_id = NULL;
 	pData->client_secret = NULL;
