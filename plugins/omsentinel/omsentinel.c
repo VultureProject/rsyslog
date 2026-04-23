@@ -109,8 +109,6 @@ typedef struct instanceConf_s
 	uchar *auth_domain;
 	time_t authExp;
 	uchar *apiRestAuth;
-	uchar *authReply;
-	size_t authReplyLen;
 	uchar *token;
 	uchar *baseURL;
 	uchar *authParams;	// auth purpose
@@ -168,6 +166,8 @@ typedef struct wrkrInstanceData
 	int serverIndex;
 	int replyLen;
 	char *reply;
+	uchar *authReply;
+	size_t authReplyLen;
 	long httpStatusCode;	   /* http status code of response */
 	CURL *curlPostHandle;	   /* libcurl session handle for posting data to the server */
 	HEADER *curlHeader;		   /* json POST request info */
@@ -268,6 +268,8 @@ CODESTARTcreateWrkrInstance
 	pWrkrData->httpStatusCode = 0;
 	pWrkrData->restURL = NULL;
 	pWrkrData->bzInitDone = 0;
+	pWrkrData->authReply = NULL;
+	pWrkrData->authReplyLen = 0;
 
 	//batch initial allocation
 	pWrkrData->batch.nmemb = 0;
@@ -306,7 +308,6 @@ CODESTARTfreeInstance
 	free(pData->dcr);
 	free(pData->stream_name);
 	free(pData->baseURL);
-	free(pData->authReply);
 	free(pData->authParams);
 	free(pData->token);
 	free(pData->apiRestAuth);
@@ -342,7 +343,8 @@ CODESTARTfreeWrkrInstance
 	free(pWrkrData->batch.data);
 	pWrkrData->batch.data = NULL;
 
-
+	free(pWrkrData->authReply);
+	pWrkrData->authReply = NULL;
 
 	if (pWrkrData->bzInitDone)
 	{
@@ -987,20 +989,20 @@ finalize_it:
 
 size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp)
 {
-	instanceData *pData = (instanceData *)userp;
+	wrkrInstanceData_t *pWrkrData = (wrkrInstanceData_t *)userp;
 	size_t msgSize = size * nmemb;
 
-	uchar *new_alloc = realloc(pData->authReply, pData->authReplyLen + msgSize + 1);
+	uchar *new_alloc = realloc(pWrkrData->authReply, pWrkrData->authReplyLen + msgSize + 1);
 	if (new_alloc == NULL)
 	{
 		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: Allocation error on auth callback!");
 		return 0;
 	}
 
-	pData->authReply = new_alloc;
-	memcpy(&(pData->authReply[pData->authReplyLen]), contents, msgSize);
-	pData->authReplyLen += msgSize;
-	pData->authReply[pData->authReplyLen] = 0;
+	pWrkrData->authReply = new_alloc;
+	memcpy(&(pWrkrData->authReply[pWrkrData->authReplyLen]), contents, msgSize);
+	pWrkrData->authReplyLen += msgSize;
+	pWrkrData->authReply[pWrkrData->authReplyLen] = 0;
 
 	return msgSize;
 }
@@ -1028,7 +1030,7 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(curl, CURLOPT_POSTFIELDS, message);
 	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
-	curl_easy_setopt(curl, CURLOPT_WRITEDATA, pData);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, pWrkrData);
 	if (pData->proxyHost != NULL)
 	{
 		curl_easy_setopt(curl, CURLOPT_PROXY, pData->proxyHost);
@@ -1057,8 +1059,8 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 
 
 	// parsing and serializing http response
-	if(pData->authReply){
-		struct json_object *parsed_json = json_tokener_parse((char *)pData->authReply);
+	if(pWrkrData->authReply){
+		struct json_object *parsed_json = json_tokener_parse((char *)pWrkrData->authReply);
 		if (parsed_json != NULL)
 		{
 			struct json_object *access_token = NULL;
@@ -1079,14 +1081,14 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 				else
 				{
 					LogError(0, RS_RET_SUSPENDED,
-						"omsentinel: 'access_token' value is NULL in JSON reply : %s\n", pData->authReply);
+						"omsentinel: 'access_token' value is NULL in JSON reply : %s\n", pWrkrData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 				}
 			}
 			else
 			{
 				LogError(0, RS_RET_SUSPENDED,
-						"omsentinel: failed to parse JSON from http response: %s\n", pData->authReply);
+						"omsentinel: failed to parse JSON from http response: %s\n", pWrkrData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 			}
 			// expiration date
@@ -1101,14 +1103,14 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 				else
 				{
 					LogError(0, RS_RET_SUSPENDED,
-						"omsentinel: 'expires_in' value is NULL in JSON reply : %s\n", pData->authReply);
+						"omsentinel: 'expires_in' value is NULL in JSON reply : %s\n", pWrkrData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 				}
 			}
 			else
 			{
 				LogError(0, RS_RET_SUSPENDED,
-						"omsentinel: failed to parse JSON from http response: %s\n", pData->authReply);
+						"omsentinel: failed to parse JSON from http response: %s\n", pWrkrData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 			}
 			json_object_put(parsed_json);
@@ -1154,9 +1156,9 @@ static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData)
 		// Recheck conditions to avoid TOC/TOU conditions
 		if ((time(NULL) + 30) >= pData->authExp)
 		{
-			if (pData->authReply)
+			if (pWrkrData->authReply)
 			{
-				free(pData->authReply);
+				free(pWrkrData->authReply);
 			}
 			if (pData->token)
 			{
@@ -1169,8 +1171,8 @@ static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData)
 
 			// nullify to prevent dangling pointers
 			pData->token = NULL;
-			pData->authReply = NULL;
-			pData->authReplyLen = 0;
+			pWrkrData->authReply = NULL;
+			pWrkrData->authReplyLen = 0;
 			pData->httpHeader = NULL;
 
 			CHKiRet(curlAuth(pWrkrData, pData->authParams));
@@ -1519,8 +1521,6 @@ setInstParamDefaults(instanceData *const pData)
 	pData->baseURL = NULL;
 	pData->authExp = 0;
 	pData->apiRestAuth = NULL;
-	pData->authReply = NULL;
-	pData->authReplyLen = 0;
 	pData->token = NULL;
 	pData->authParams = NULL;
 	pData->httpHeader = NULL;
