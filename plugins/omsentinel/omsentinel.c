@@ -228,6 +228,7 @@ static rsRetVal curlSetup(wrkrInstanceData_t *pWrkrData);
 static void curlCleanup(wrkrInstanceData_t *pWrkrData);
 size_t write_callback(void *contents, size_t size, size_t nmemb, void *userp);
 static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message);
+static void resetAuth(wrkrInstanceData_t *pWrkrData);
 static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData);
 
 /* compressCtx functions */
@@ -648,7 +649,7 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 			if (statusCode == 401)
 			{
 				pthread_rwlock_wrlock(&pData->authlock);
-				pData->authExp = 0;
+				resetAuth(pWrkrData);
 				pthread_rwlock_unlock(&pData->authlock);
 				LogMsg(0, iRet, LOG_WARNING, "omsentinel: Received 401, token expired");
 			}
@@ -1141,13 +1142,39 @@ finalize_it:
 	RETiRet;
 }
 
+/* This function resets all authentication variables
+ * It MUST be called after write-locking the pData->authlock variable
+ */
+static void resetAuth(wrkrInstanceData_t *pWrkrData)
+{
+	instanceData *pData = pWrkrData->pData;
+	if (pWrkrData->authReply)
+	{
+		free(pWrkrData->authReply);
+		pWrkrData->authReply = NULL;
+	}
+	if (pData->token)
+	{
+		free(pData->token);
+		pData->token = NULL;
+	}
+	if (pData->httpHeader)
+	{
+		free(pData->httpHeader);
+		pData->httpHeader = NULL;
+	}
+
+	pWrkrData->authReplyLen = 0;
+	pData->authExp = 0;
+}
+
 static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData)
 {
 	instanceData *pData = pWrkrData->pData;
 	DEFiRet;
 
 	pthread_rwlock_rdlock(&pData->authlock);
-
+	
 	// Renew token if time to live is less than 30 seconds
 	if ((time(NULL) + 30) >= pData->authExp)
 	{
@@ -1156,25 +1183,7 @@ static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData)
 		// Recheck conditions to avoid TOC/TOU conditions
 		if ((time(NULL) + 30) >= pData->authExp)
 		{
-			if (pWrkrData->authReply)
-			{
-				free(pWrkrData->authReply);
-			}
-			if (pData->token)
-			{
-				free(pData->token);
-			}
-			if (pData->httpHeader)
-			{
-				free(pData->httpHeader);
-			}
-
-			// nullify to prevent dangling pointers
-			pData->token = NULL;
-			pWrkrData->authReply = NULL;
-			pWrkrData->authReplyLen = 0;
-			pData->httpHeader = NULL;
-
+			resetAuth(pWrkrData);
 			CHKiRet(curlAuth(pWrkrData, pData->authParams));
 		}
 	}
