@@ -944,7 +944,7 @@ buildCurlHeaders(wrkrInstanceData_t *pWrkrData, sbool contentEncodeGzip)
 	}
 
 	pthread_rwlock_rdlock(&pWrkrData->pData->authlock);
-	if (pWrkrData->pData->httpHeader)
+	if (pWrkrData->pData->httpHeader != NULL)
 	{
 		temp = curl_slist_append(slist, (char *)pWrkrData->pData->httpHeader);
 		pthread_rwlock_unlock(&pWrkrData->pData->authlock);
@@ -1457,13 +1457,17 @@ curlSetup(wrkrInstanceData_t *const pWrkrData)
 		slist = temp;
 	}
 
+	pthread_rwlock_rdlock(&pWrkrData->pData->authlock);
 	if (pWrkrData->pData->httpHeader)
 	{
-		pthread_rwlock_rdlock(&pWrkrData->pData->authlock);
 		temp = curl_slist_append(slist, (char *)pWrkrData->pData->httpHeader);
 		pthread_rwlock_unlock(&pWrkrData->pData->authlock);
 		CHKmalloc(temp);
 		slist = temp;
+	}
+	else
+	{
+		pthread_rwlock_unlock(&pWrkrData->pData->authlock);
 	}
 
 	// When sending more than 1Kb, libcurl automatically sends an Except: 100-Continue header
