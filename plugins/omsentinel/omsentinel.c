@@ -1176,13 +1176,13 @@ static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData)
 
 	pthread_rwlock_rdlock(&pData->authlock);
 
-	// Renew token if time to live is less than 5 seconds
-	if ((time(NULL) + 5) >= pData->authExp)
+	// Renew token if time to live is less than 30 seconds
+	if ((time(NULL) + 30) >= pData->authExp)
 	{
 		pthread_rwlock_unlock(&pData->authlock);
 		pthread_rwlock_wrlock(&pData->authlock);
 		// Recheck conditions to avoid TOC/TOU conditions
-		if ((time(NULL) + 5) >= pData->authExp)
+		if ((time(NULL) + 30) >= pData->authExp)
 		{
 			if (pData->authReply)
 			{
@@ -1416,6 +1416,7 @@ CODESTARTcommitTransaction
 		pWrkrData->batch.data[pWrkrData->batch.nmemb++] = payload;
 	}
 
+	CHKiRet(checkAuth(pWrkrData));
 	CHKiRet(submitBatch(pWrkrData));
 finalize_it:
 ENDcommitTransaction
