@@ -121,6 +121,7 @@ typedef struct instanceConf_s
 	int proxyPort;
 	uchar *tplName;
 	uchar *errorFile;
+	size_t maxBatchBytes;
 	sbool compress;
 	int compressionLevel;	// Compression level for zlib, default=-1, fastest=1, best=9, none=0
 	uchar *caCertFile;
@@ -1542,6 +1543,7 @@ setInstParamDefaults(instanceData *const pData)
 	pData->restPath = NULL;
 	pData->proxyHost = NULL;
 	pData->proxyPort = 0;
+	pData->maxBatchBytes = 10485760;	// i.e. 10 MB Is the default max message size for AWS API Gateway
 	pData->compress = 0;			// off
 	pData->compressionLevel = -1;		// default compression
 	pData->tplName = NULL;
@@ -1644,8 +1646,7 @@ CODESTARTnewActInst
 		}
 		else if (!strcmp(actpblk.descr[i].name, "batch.maxbytes"))
 		{
-			LogMsg(0, RS_RET_DEPRECATED, LOG_WARNING, "omsentinel: 'batch.maxbytes' is deprecated "
-				"and will be ignored!");
+			pData->maxBatchBytes = (size_t)pvals[i].val.d.n;
 		}
 		else if (!strcmp(actpblk.descr[i].name, "batch.maxsize"))
 		{
