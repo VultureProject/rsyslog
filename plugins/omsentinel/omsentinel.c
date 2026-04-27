@@ -405,13 +405,13 @@ setPostURL(wrkrInstanceData_t *const pWrkrData)
 	if (url == NULL)
 	{
 		LogError(0, RS_RET_OUT_OF_MEMORY,
-				 "omsentinel: error allocating new estr for POST url.");
+				 "omsentinel[setPostURL]: error allocating new estr for POST url.");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 
 	if ((r = es_addBuf(&url, (char *)pData->restPath, ustrlen(pData->restPath))) != 0)
 	{
-		LogError(0, RS_RET_ERR, "omsentinel: failure in creating restURL, "
+		LogError(0, RS_RET_ERR, "omsentinel[setPostURL]: failure in creating restURL, "
 								"error code: %d",
 				 r);
 		ABORT_FINALIZE(RS_RET_ERR);
@@ -533,7 +533,7 @@ writeDataError(wrkrInstanceData_t *const pWrkrData, instanceData *const pData, u
 					S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP);
 		if (pData->fdErrFile == -1)
 		{
-			LogError(errno, RS_RET_ERR, "omsentinel: error opening error file %s",
+			LogError(errno, RS_RET_ERR, "omsentinel[writeDataError]: error opening error file %s",
 					 pData->errorFile);
 			ABORT_FINALIZE(RS_RET_ERR);
 		}
@@ -552,7 +552,7 @@ writeDataError(wrkrInstanceData_t *const pWrkrData, instanceData *const pData, u
 	if (wrRet != (ssize_t)toWrite)
 	{
 		LogError(errno, RS_RET_IO_ERROR,
-				 "omsentinel: error writing error file %s, write returned %lld",
+				 "omsentinel[writeDataError]: error writing error file %s, write returned %lld",
 				 pData->errorFile, (long long)wrRet);
 	}
 
@@ -574,7 +574,7 @@ queueBatchOnRetryRuleset(wrkrInstanceData_t *const pWrkrData, instanceData *cons
 
 	if (pData->retryRuleset == NULL)
 	{
-		LogError(0, RS_RET_ERR, "omsentinel: queueBatchOnRetryRuleset invalid call with a NULL retryRuleset");
+		LogError(0, RS_RET_ERR, "omsentinel[queueBatchOnRetryRuleset]: invalid call with a NULL retryRuleset");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 
@@ -732,7 +732,7 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 
 	if (iRet != RS_RET_OK)
 	{
-		LogMsg(0, iRet, LOG_ERR, "omsentinel: checkResult error http status code: %ld reply: %s",
+		LogMsg(0, iRet, LOG_ERR, "omsentinel[checkResult]: received HTTP status code %ld: %s",
 			   statusCode, pWrkrData->reply != NULL ? pWrkrData->reply : "NULL");
 
 		writeDataError(pWrkrData, pWrkrData->pData, reqmsg);
@@ -1021,7 +1021,8 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 
 	if (curl == NULL)
 	{
-		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: Failed to initialize libcurl during authentication");
+		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel[curlAuth]:"
+			" Failed to initialize libcurl during authentication");
 		ABORT_FINALIZE(RS_RET_OUT_OF_MEMORY);
 	}
 
@@ -1047,14 +1048,14 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	res = curl_easy_perform(curl);
 	if (res != CURLE_OK)
 	{
-		LogError(0, RS_RET_ERR, "curl:  error: %s\n", curl_easy_strerror(res));
+		LogError(0, RS_RET_ERR, "omsentinel[curlAuth]: curl error: %s", curl_easy_strerror(res));
 		ABORT_FINALIZE(RS_RET_SUSPENDED);
 	}
 
 	curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
 	if (http_code != 200)
 	{
-		dbgprintf("omsentinel: http_reply_code=%ld \n", http_code);
+		LogError(0, RS_RET_ERR, "omsentinel[curlAuth]: http error %ld", http_code);
 		ABORT_FINALIZE(RS_RET_SUSPENDED);
 	}
 
@@ -1075,21 +1076,23 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 					if(!(pData->token = (uchar *)strdup(tokenStr)))
 					{
 						LogError(0, RS_RET_OUT_OF_MEMORY,
-							"omsentinel: could not allocate Bearer token \n");
+							"omsentinel[curlAuth]: could not allocate Bearer token");
 						ABORT_FINALIZE(RS_RET_ERR);
 					}
 				}
 				else
 				{
 					LogError(0, RS_RET_SUSPENDED,
-						"omsentinel: 'access_token' value is NULL in JSON reply : %s\n", pWrkrData->authReply);
+						"omsentinel[curlAuth]: 'access_token' value is NULL in JSON reply : %s",
+						pWrkrData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 				}
 			}
 			else
 			{
 				LogError(0, RS_RET_SUSPENDED,
-						"omsentinel: failed to parse JSON from http response: %s\n", pWrkrData->authReply);
+						"omsentinel[curlAuth]: failed to parse JSON from http response: %s",
+						pWrkrData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 			}
 			// expiration date
@@ -1104,14 +1107,16 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 				else
 				{
 					LogError(0, RS_RET_SUSPENDED,
-						"omsentinel: 'expires_in' value is NULL in JSON reply : %s\n", pWrkrData->authReply);
+						"omsentinel[curlAuth]: 'expires_in' value is NULL in JSON reply : %s",
+						pWrkrData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 				}
 			}
 			else
 			{
 				LogError(0, RS_RET_SUSPENDED,
-						"omsentinel: failed to parse JSON from http response: %s\n", pWrkrData->authReply);
+						"omsentinel[curlAuth]: failed to parse JSON from http response: %s",
+						pWrkrData->authReply);
 						ABORT_FINALIZE(RS_RET_SUSPENDED);
 			}
 			json_object_put(parsed_json);
@@ -1119,14 +1124,14 @@ static rsRetVal curlAuth(wrkrInstanceData_t *pWrkrData, uchar *message)
 	}
 	else
 	{
-		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: could not allocate http response \n");
+		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel[curlAuth]: could not allocate http response");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 
 	// httpHeader
 	if (asprintf((char **)&pData->httpHeader, (char *)"Authorization: Bearer %s", pData->token) < 0)
 	{
-		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for http header\n");
+		LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel[curlAuth]: cannot allocate memory for http header");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 
@@ -1183,7 +1188,8 @@ static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData)
 		// Recheck conditions to avoid TOC/TOU conditions
 		if ((time(NULL) + 30) >= pData->authExp)
 		{
-			LogMsg(0, RS_RET_OK, LOG_INFO, "omsentinel: Token expires soon, renewing authentication...");
+			LogMsg(0, RS_RET_OK, LOG_INFO, "omsentinel: Empty or expiring token, "
+				"renewing authentication...");
 			resetAuth(pWrkrData);
 			CHKiRet(curlAuth(pWrkrData, pData->authParams));
 		}
@@ -1223,7 +1229,8 @@ curlPost(wrkrInstanceData_t *pWrkrData, uchar *message, int msglen, const int nm
 		iRet = compressHttpPayload(pWrkrData, message, msglen);
 		if (iRet != RS_RET_OK)
 		{
-			LogError(0, iRet, "omsentinel: curlPost error while compressing, will default to uncompressed");
+			LogError(0, iRet, "omsentinel[curlPost]: curlPost error while compressing,"
+				" will default to uncompressed");
 		}
 		else
 		{
@@ -1250,7 +1257,7 @@ curlPost(wrkrInstanceData_t *pWrkrData, uchar *message, int msglen, const int nm
 	{
 		STATSCOUNTER_INC(ctrHttpRequestFail, mutCtrHttpRequestFail);
 		LogError(0, RS_RET_SUSPENDED,
-				 "omsentinel: suspending ourselves due to server failure %lld: %s",
+				 "omsentinel[curlPost]: suspending ourselves due to server failure %lld: %s",
 				 (long long)curlCode, errbuf);
 		// Check the result here too and retry if needed, then we should suspend
 		// Usually in batch mode we clobber any iRet values, but probably not a great
@@ -1306,7 +1313,7 @@ serializeBatchJsonArray(wrkrInstanceData_t *pWrkrData, char **batchBuf)
 	batchArray = fjson_object_new_array();
 	if (batchArray == NULL)
 	{
-		LogError(0, RS_RET_ERR, "omsentinel: serializeBatchJsonArray failed to create array");
+		LogError(0, RS_RET_ERR, "omsentinel[serializeBatchJsonArray]: failed to create array");
 		ABORT_FINALIZE(RS_RET_ERR);
 	}
 
@@ -1316,7 +1323,7 @@ serializeBatchJsonArray(wrkrInstanceData_t *pWrkrData, char **batchBuf)
 		if (msgObj == NULL)
 		{
 			LogError(0, NO_ERRCODE,
-					 "omsentinel: serializeBatchJsonArray failed to parse %s as json, ignoring it",
+					 "omsentinel[serializeBatchJsonArray]: failed to parse %s as json, ignoring it",
 					 pWrkrData->batch.data[i]);
 			continue;
 		}
@@ -1720,7 +1727,7 @@ CODESTARTnewActInst
 			{
 				rs_strerror_r(errno, errStr, sizeof(errStr));
 				LogError(0, RS_RET_NO_FILE_ACCESS,
-						"error: 'tls.cacert' file %s couldn't be accessed: %s\n",
+						"omsentinel: 'tls.cacert' file %s couldn't be accessed: %s",
 						pData->caCertFile, errStr);
 			}
 			else
@@ -1736,7 +1743,7 @@ CODESTARTnewActInst
 			{
 				rs_strerror_r(errno, errStr, sizeof(errStr));
 				LogError(0, RS_RET_NO_FILE_ACCESS,
-				"error: 'tls.mycert' file %s couldn't be accessed: %s\n",
+				"omsentinel: 'tls.mycert' file %s couldn't be accessed: %s",
 				pData->myCertFile, errStr);
 			}
 			else
@@ -1752,7 +1759,7 @@ CODESTARTnewActInst
 			{
 				rs_strerror_r(errno, errStr, sizeof(errStr));
 				LogError(0, RS_RET_NO_FILE_ACCESS,
-					"error: 'tls.myprivkey' file %s couldn't be accessed: %s\n",
+					"omsentinel: 'tls.myprivkey' file %s couldn't be accessed: %s",
 					pData->myPrivKeyFile, errStr);
 			}
 			else
@@ -1774,7 +1781,7 @@ CODESTARTnewActInst
 				{
 					char *cstr = es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
 					LogError(0, RS_RET_NO_FILE_ACCESS,
-						"error: 'httpRetryCode' '%s' is not a number - ignored\n", cstr);
+						"omsentinel: 'httpRetryCode' '%s' is not a number - ignored", cstr);
 					free(cstr);
 				}
 				else
@@ -1817,7 +1824,8 @@ CODESTARTnewActInst
 				{
 					char *cstr = es_str2cstr(pvals[i].val.d.ar->arr[j], NULL);
 					LogError(0, RS_RET_NO_FILE_ACCESS,
-						"error: 'httpIgnorableCodes' '%s' is not a number - ignored\n", cstr);
+						"omsentinel: 'httpIgnorableCodes' '%s' is not a number - ignored",
+						cstr);
 					free(cstr);
 				}
 				else
@@ -1852,12 +1860,13 @@ CODESTARTnewActInst
 	{
 		if (asprintf((char **)&pData->baseURL, "https://%s", pData->dce) < 0)
 		{
-			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for base URL\n");
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for base URL");
 			ABORT_FINALIZE(RS_RET_ERR);
 		}
-		if (asprintf((char **)&pData->restPath, "/dataCollectionRules/%s/streams/%s?api-version=2023-01-01", pData->dcr, pData->stream_name) < 0)
+		if (asprintf((char **)&pData->restPath, "/dataCollectionRules/%s/streams/%s?api-version=2023-01-01",
+			pData->dcr, pData->stream_name) < 0)
 		{
-			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for rest path\n");
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for rest path");
 			ABORT_FINALIZE(RS_RET_ERR);
 		}
 	}
@@ -1871,21 +1880,24 @@ CODESTARTnewActInst
 	// Authentification
 	if (pData->scope && pData->client_secret && pData->client_id && pData->grant_type && pData->tenant_id)
 	{
-		if (asprintf((char **)&pData->apiRestAuth, "https://%s/%s/oauth2/v2.0/token",pData->auth_domain,pData->tenant_id) < 0)
+		if (asprintf((char **)&pData->apiRestAuth, "https://%s/%s/oauth2/v2.0/token",
+			pData->auth_domain,pData->tenant_id) < 0)
 		{
-			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth api\n");
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth api");
 			ABORT_FINALIZE(RS_RET_ERR);
 		}
 
-		if (asprintf((char **)&pData->authParams, "scope=%s&client_secret=%s&client_id=%s&grant_type=%s", pData->scope, pData->client_secret, pData->client_id, pData->grant_type) < 0)
+		if (asprintf((char **)&pData->authParams, "scope=%s&client_secret=%s&client_id=%s&grant_type=%s",
+			pData->scope, pData->client_secret, pData->client_id, pData->grant_type) < 0)
 		{
-			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth params\n");
+			LogError(0, RS_RET_OUT_OF_MEMORY, "omsentinel: cannot allocate memory for auth params");
 			ABORT_FINALIZE(RS_RET_ERR);
 		}
 	}
 	else
 	{
-		LogError(0, RS_RET_PARAM_ERROR, "parameters missings 'scope, client_secret, client_id, grant_type, tenant_id'");
+		LogError(0, RS_RET_PARAM_ERROR, "omsentinel: parameters missing"
+			" 'scope, client_secret, client_id, grant_type, tenant_id'");
 	}
 
 	DBGPRINTF("omsentinel: requesting %d templates\n", iNumTpls);
@@ -2105,7 +2117,7 @@ CODEmodInit_QueryRegCFSLineHdlr
 
 	if (curl_global_init(CURL_GLOBAL_ALL) != 0)
 	{
-		LogError(0, RS_RET_OBJ_CREATION_FAILED, "CURL fail. -http disabled");
+		LogError(0, RS_RET_OBJ_CREATION_FAILED, "omsentinel: CURL fail. -http disabled");
 		ABORT_FINALIZE(RS_RET_OBJ_CREATION_FAILED);
 	}
 
