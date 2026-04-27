@@ -632,6 +632,7 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 	{
 		// server error, suspend or retry
 		STATSCOUNTER_INC(ctrHttpStatusFail, mutCtrHttpStatusFail);
+		STATSCOUNTER_INC(pData->ctrHttpRequestsStatus5xx, pData->mutCtrHttpRequestsStatus5xx);
 		STATSCOUNTER_ADD(ctrMessagesFail, mutCtrMessagesFail, numMessages);
 		iRet = RS_RET_SUSPENDED;
 	}
@@ -656,10 +657,6 @@ checkResult(wrkrInstanceData_t *pWrkrData, uchar *reqmsg)
 				pthread_rwlock_unlock(&pData->authlock);
 				LogMsg(0, iRet, LOG_WARNING, "omsentinel: Received 401, token expired");
 			}
-		}
-		else if (statusCode >= 500 && statusCode < 600)
-		{
-			STATSCOUNTER_INC(pData->ctrHttpRequestsStatus5xx, pData->mutCtrHttpRequestsStatus5xx);
 		}
 	}
 	else
