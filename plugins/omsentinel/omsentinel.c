@@ -1186,6 +1186,7 @@ static rsRetVal checkAuth(wrkrInstanceData_t *pWrkrData)
 		// Recheck conditions to avoid TOC/TOU conditions
 		if ((time(NULL) + 30) >= pData->authExp)
 		{
+			LogMsg(0, RS_RET_OK, LOG_INFO, "omsentinel: Token expires soon, renewing authentication...");
 			resetAuth(pWrkrData);
 			CHKiRet(curlAuth(pWrkrData, pData->authParams));
 		}
