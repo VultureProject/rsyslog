@@ -2676,6 +2676,31 @@ omsentinel_check_all_compressed() {
     echo "omsentinel: all $compressed ingest requests were gzip-compressed (OK)"
 }
 
+# ---------------------------------------------------------------------------
+# omsentinel_check_max_batch_messages <expected_max>
+#
+# Queries /test/stats and asserts that no single ingest POST contained more
+# than <expected_max> message objects, and that more than one POST was made
+# (i.e. the byte-limit split actually triggered).
+# ---------------------------------------------------------------------------
+omsentinel_check_max_batch_messages() {
+    local expected_max="$1"
+    local stats ingested max_batch
+    stats=$(_omsentinel_curl /test/stats)
+    ingested=$(echo "$stats" | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['ingested'])")
+    max_batch=$(echo "$stats" | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['max_batch_messages'])")
+
+    if [ "$ingested" -le 1 ]; then
+        echo "omsentinel_check_max_batch_messages: FAILED: only $ingested ingest POST(s) — batch splitting did not occur" >&2
+        error_exit 1
+    fi
+    if [ "$max_batch" -gt "$expected_max" ]; then
+        echo "omsentinel_check_max_batch_messages: FAILED: largest batch had $max_batch messages, expected <= $expected_max" >&2
+        error_exit 1
+    fi
+    echo "omsentinel: batch splitting OK — $ingested POSTs, largest batch = $max_batch messages (<= $expected_max)"
+}
+
 # prepare MySQL for next test
 # each test receives its own database so that we also can run in parallel
 mysql_prep_for_test() {

@@ -178,6 +178,7 @@ typedef struct wrkrInstanceData
 	struct
 	{
 		uchar **data;	  /* array of strings, this will be batched up lazily */
+		size_t sizeBytes; /* total length of this batch in bytes */
 		size_t nmemb;	  /* number of messages in batch (for statistics counting) */
 
 	} batch;
@@ -275,6 +276,7 @@ CODESTARTcreateWrkrInstance
 
 	//batch initial allocation
 	pWrkrData->batch.nmemb = 0;
+	pWrkrData->batch.sizeBytes = 0;
 	pWrkrData->batch.data = NULL;
 
 	checkAuth(pWrkrData);
@@ -1337,6 +1339,32 @@ finalize_it:
 	RETiRet;
 }
 
+/* Return the final batch size in bytes for each serialization method.
+ * Used to decide if a batch should be flushed early.
+ */
+static size_t
+computeBatchSize(wrkrInstanceData_t *pWrkrData)
+{
+	size_t extraBytes = 0;
+	size_t sizeBytes = pWrkrData->batch.sizeBytes;
+	size_t numMessages = pWrkrData->batch.nmemb;
+
+	// square brackets, commas between each message
+	// 2 + numMessages - 1 = numMessages + 1
+	extraBytes = numMessages > 0 ? numMessages + 1 : 2;
+
+	return sizeBytes + extraBytes + 1; // plus a null
+}
+
+static void ATTR_NONNULL()
+initializeBatch(wrkrInstanceData_t *pWrkrData)
+{
+	pWrkrData->batch.sizeBytes = 0;
+	pWrkrData->batch.nmemb = 0;
+}
+
+/* Adds a message to this worker's batch
+ */
 static rsRetVal
 submitBatch(wrkrInstanceData_t *pWrkrData)
 {
@@ -1365,7 +1393,7 @@ finalize_it:
 BEGINbeginTransaction
 CODESTARTbeginTransaction
 	// Reset batch member of stored elements (but don't free batch space)
-	pWrkrData->batch.nmemb = 0;
+	initializeBatch(pWrkrData);
 	iRet = checkAuth(pWrkrData);
 ENDbeginTransaction
 
@@ -1373,6 +1401,8 @@ BEGINcommitTransaction
 	unsigned i;
 	const int iNumTpls = 1;
 	uchar **batchData = NULL;
+	uchar *msg;
+	size_t msgSize = 0;
 CODESTARTcommitTransaction
 	batchData = (uchar **)realloc(pWrkrData->batch.data, nParams * sizeof(uchar *));
 	if (batchData == NULL)
@@ -1382,9 +1412,18 @@ CODESTARTcommitTransaction
 	pWrkrData->batch.data = batchData;
 
 	for (i = 0; i < nParams; ++i) {
-		uchar *payload = actParam(pParams, iNumTpls, i, 0).param;
+		msg = actParam(pParams, iNumTpls, i, 0).param;
+		msgSize = strlen((char *)msg);
+		if (computeBatchSize(pWrkrData) + msgSize > pWrkrData->pData->maxBatchBytes)
+		{
+			LogMsg(0, RS_RET_OK, LOG_INFO, "omsentinel: Maximum size reached, sending partial batch");
+			CHKiRet(checkAuth(pWrkrData));
+			CHKiRet(submitBatch(pWrkrData));
+			initializeBatch(pWrkrData);
+		}
+		pWrkrData->batch.data[pWrkrData->batch.nmemb++] = msg;
+		pWrkrData->batch.sizeBytes += msgSize;
 		STATSCOUNTER_INC(ctrMessagesSubmitted, mutCtrMessagesSubmitted);
-		pWrkrData->batch.data[pWrkrData->batch.nmemb++] = payload;
 	}
 
 	CHKiRet(checkAuth(pWrkrData));

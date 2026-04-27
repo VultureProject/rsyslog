@@ -46,6 +46,7 @@ state = {
     "issued_count":      0,      # total token requests handled
     "ingest_count":      0,      # total ingest requests handled
     "compressed_count":  0,      # ingest requests with Content-Encoding: gzip
+    "max_batch_messages": 0,     # largest message count seen in a single ingest POST
     # config (set from CLI, never mutated after startup)
     "accepted_dcr":      [],
     "accepted_streams":  [],
@@ -116,6 +117,7 @@ class SentinelHandler(BaseHTTPRequestHandler):
                     "ingested":      state["ingest_count"],
                     "active_tokens": len(state["tokens"]),
                     "compressed":    state["compressed_count"],
+                    "max_batch_messages": state["max_batch_messages"],
                 })
             return
 
@@ -174,6 +176,9 @@ class SentinelHandler(BaseHTTPRequestHandler):
             state["ingest_count"] += 1
             if is_compressed:
                 state["compressed_count"] += 1
+            msg_count = len(json.loads(body))
+            if msg_count > state["max_batch_messages"]:
+                state["max_batch_messages"] = msg_count
             n = state["ingest_count"]
 
             # Failure injection
