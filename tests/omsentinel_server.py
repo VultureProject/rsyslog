@@ -24,6 +24,7 @@ Failure injection (CLI flags):
   --fail-with CODE       HTTP status code to use for injected failures (default 500)
 """
 import argparse
+import gzip
 import json
 import os
 import ssl
@@ -44,6 +45,7 @@ state = {
     "ingested":          [],     # list of raw POST body strings (one per request)
     "issued_count":      0,      # total token requests handled
     "ingest_count":      0,      # total ingest requests handled
+    "compressed_count":  0,      # ingest requests with Content-Encoding: gzip
     # config (set from CLI, never mutated after startup)
     "accepted_dcr":      [],
     "accepted_streams":  [],
@@ -113,6 +115,7 @@ class SentinelHandler(BaseHTTPRequestHandler):
                     "issued":        state["issued_count"],
                     "ingested":      state["ingest_count"],
                     "active_tokens": len(state["tokens"]),
+                    "compressed":    state["compressed_count"],
                 })
             return
 
@@ -147,7 +150,11 @@ class SentinelHandler(BaseHTTPRequestHandler):
         # Always consume the request body first so the connection stays clean
         # for subsequent keep-alive requests, regardless of whether we accept
         # or reject this particular request.
-        body = self._read_body().decode("utf-8")
+        raw_body = self._read_body()
+        is_compressed = self.headers.get("Content-Encoding", "").lower() == "gzip"
+        if is_compressed:
+            raw_body = gzip.decompress(raw_body)
+        body = raw_body.decode("utf-8")
 
         # Validate Bearer token
         auth = self.headers.get("Authorization", "")
@@ -165,6 +172,8 @@ class SentinelHandler(BaseHTTPRequestHandler):
                 return
 
             state["ingest_count"] += 1
+            if is_compressed:
+                state["compressed_count"] += 1
             n = state["ingest_count"]
 
             # Failure injection

@@ -2603,6 +2603,35 @@ omsentinel_stop_server() {
 }
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# _omsentinel_curl <path>  (private)
+#
+# Runs curl against the mock server, handling TLS / plain-HTTP automatically.
+# Prints the raw response body to stdout.
+# ---------------------------------------------------------------------------
+_omsentinel_curl() {
+    local scheme curl_opts
+    if [ -n "$SENTINEL_CERT" ]; then
+        scheme="https"
+        curl_opts="--cacert $SENTINEL_CERT"
+    else
+        scheme="http"
+        curl_opts=""
+    fi
+    curl -s $curl_opts "${scheme}://127.0.0.1:${OMSENTINEL_PORT}${1}"
+}
+
+# ---------------------------------------------------------------------------
+# _omsentinel_stat <field>  (private)
+#
+# Fetches /test/stats and prints the value of a single JSON field.
+# ---------------------------------------------------------------------------
+_omsentinel_stat() {
+    _omsentinel_curl /test/stats \
+        | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['$1'])"
+}
+
+# ---------------------------------------------------------------------------
 # omsentinel_get_data
 #
 # GETs /test/data from the mock server and writes one msgnum per line
@@ -2612,19 +2641,7 @@ omsentinel_stop_server() {
 # a JSON array of log-entry objects (the batch format omsentinel always uses).
 # ---------------------------------------------------------------------------
 omsentinel_get_data() {
-    local scheme="https"
-    local curl_opts=""
-    if [ -n "$SENTINEL_CERT" ]; then
-        curl_opts="--cacert $SENTINEL_CERT"
-    else
-        scheme="http"
-    fi
-
-    local url="${scheme}://127.0.0.1:${OMSENTINEL_PORT}/test/data"
-
-    # Each element of the outer array is a JSON array of log objects.
-    # Extract the "msgnum" field from every log object across all batches.
-    curl -s $curl_opts "$url" \
+    _omsentinel_curl /test/data \
         | $PYTHON -c "
 import json, sys
 batches = json.load(sys.stdin)
@@ -2633,6 +2650,30 @@ print('\n'.join(nums))
 " \
         | sort -n \
         > "$RSYSLOG_OUT_LOG"
+}
+
+# ---------------------------------------------------------------------------
+# omsentinel_check_all_compressed
+#
+# Queries /test/stats and asserts that every ingest request carried a
+# Content-Encoding: gzip header (i.e. compressed == ingested).  Fails the
+# test if any request was sent uncompressed.
+# ---------------------------------------------------------------------------
+omsentinel_check_all_compressed() {
+    local stats ingested compressed
+    stats=$(_omsentinel_curl /test/stats)
+    ingested=$(echo "$stats" | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['ingested'])")
+    compressed=$(echo "$stats" | $PYTHON -c "import json,sys; print(json.load(sys.stdin)['compressed'])")
+
+    if [ "$ingested" -eq 0 ]; then
+        echo "omsentinel_check_all_compressed: FAILED: no ingest requests recorded" >&2
+        error_exit 1
+    fi
+    if [ "$compressed" -ne "$ingested" ]; then
+        echo "omsentinel_check_all_compressed: FAILED: only $compressed of $ingested ingest requests were gzip-compressed" >&2
+        error_exit 1
+    fi
+    echo "omsentinel: all $compressed ingest requests were gzip-compressed (OK)"
 }
 
 # prepare MySQL for next test
