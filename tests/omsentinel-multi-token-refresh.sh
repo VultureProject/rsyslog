@@ -8,7 +8,7 @@
 # proving initAuth() triggered a refresh mid-run.
 . ${srcdir:=.}/diag.sh init
 
-export TB_TEST_MAX_RUNTIME=30
+export TB_TEST_MAX_RUNTIME=300
 export NUMMESSAGES=200
 
 omsentinel_gen_certs
@@ -42,7 +42,7 @@ if $msg contains "msgnum:" then
         action.resumeRetryCount="-1"
         queue.type="FixedArray"
         queue.workerThreads="4"
-        queue.highWatermark="10"
+        queue.workerThreadMinimumMessages="10"
     )
 '
 

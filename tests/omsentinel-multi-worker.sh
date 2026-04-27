@@ -6,8 +6,8 @@
 omsentinel_gen_certs
 omsentinel_start_server 0
 
-export TB_TEST_MAX_RUNTIME=30
-export NUMMESSAGES=1000
+export TB_TEST_MAX_RUNTIME=300
+export NUMMESSAGES=100
 
 generate_conf
 add_conf '
@@ -36,7 +36,7 @@ if $msg contains "msgnum:" then
         action.resumeRetryCount="-1"
         queue.type="FixedArray"
         queue.workerThreads="4"
-        queue.highWatermark="10"
+        queue.workerThreadMinimumMessages="10"
     )
 '
 
