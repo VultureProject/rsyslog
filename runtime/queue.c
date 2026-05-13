@@ -2509,6 +2509,10 @@ qqueueStart(rsconf_t *cnf, qqueue_t *pThis) /* this is the ConstructionFinalizer
 	CHKiRet(statsobj.AddCounter(pThis->statsobj, UCHAR_CONSTANT("discarded.nf"),
 		ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pThis->ctrNFDscrd));
 
+	STATSCOUNTER_INIT(pThis->ctrSizeEnqueued, pThis->mutCtrSizeEnqueued);
+	CHKiRet(statsobj.AddCounter(pThis->statsobj, UCHAR_CONSTANT("size.enqueued"),
+		ctrType_IntCtr, CTR_FLAG_RESETTABLE, &pThis->ctrSizeEnqueued));
+
 	pThis->ctrMaxqsize = 0; /* no mutex needed, thus no init call */
 	CHKiRet(statsobj.AddCounter(pThis->statsobj, UCHAR_CONSTANT("maxqsize"),
 		ctrType_Int, CTR_FLAG_NONE, &pThis->ctrMaxqsize));
@@ -2887,6 +2891,9 @@ doEnqSingleObj(qqueue_t *pThis, flowControl_t flowCtlType, smsg_t *pMsg)
 	struct timespec t;
 
 	STATSCOUNTER_INC(pThis->ctrEnqueued, pThis->mutCtrEnqueued);
+	/* size.enqueued mirrors enqueued: counted on arrival, before discard checks,
+	 * so it represents inbound byte volume (rejected slice tracked by ctrFDscrd). */
+	STATSCOUNTER_ADD(pThis->ctrSizeEnqueued, pThis->mutCtrSizeEnqueued, (uint64_t)pMsg->iLenRawMsg);
 	/* first check if we need to discard this message (which will cause CHKiRet() to exit)
 	 */
 	CHKiRet(qqueueChkDiscardMsg(pThis, pThis->iQueueSize, pMsg));
