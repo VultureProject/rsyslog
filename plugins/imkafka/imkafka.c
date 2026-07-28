@@ -50,6 +50,7 @@
 #include "cfsysline.h"
 #include "msg.h"
 #include "dirty.h"
+#include "imkafka_proxy.h"
 
 MODULE_TYPE_INPUT
 MODULE_TYPE_NOKEEP
@@ -98,6 +99,9 @@ struct instanceConf_s {
 	int partition;
 	int bIsSubscribed;
 	int nMsgParsingFlags;
+	uchar *proxy;			/* HTTP CONNECT proxy URL, e.g. "http://proxy:3128" */
+	uchar *proxyCredentials;	/* optional "user:pass" for Proxy-Authorization: Basic */
+	kpx_cfg_t proxyCfg;		/* parsed proxy config, passed as rdkafka opaque */
 
 	struct instanceConf_s *next;
 };
@@ -148,6 +152,8 @@ static struct cnfparamdescr inppdescr[] = {
 	{ "consumergroup", eCmdHdlrString, 0},
 	{ "ruleset", eCmdHdlrString, 0 },
 	{ "parsehostname", eCmdHdlrBinary, 0 },
+	{ "proxy", eCmdHdlrString, 0 },
+	{ "proxy.credentials", eCmdHdlrString, 0 },
 };
 static struct cnfparamblk inppblk =
 	{ CNFPARAMBLK_VERSION,
@@ -293,6 +299,9 @@ createInstance(instanceConf_t **pinst)
 	inst->pBindRuleset = NULL;
 	inst->bReportErrs = 1; /* Fixed for now */
 	inst->nMsgParsingFlags = NEEDS_PARSING;
+	inst->proxy = NULL;
+	inst->proxyCredentials = NULL;
+	memset(&inst->proxyCfg, 0, sizeof(inst->proxyCfg));
 	inst->bIsConnected = 0;
 	inst->bIsSubscribed = 0;
 	/* Kafka objects */
@@ -414,6 +423,23 @@ checkInstance(instanceConf_t *const inst)
 	#if RD_KAFKA_VERSION >= 0x00090001
 		rd_kafka_conf_set_log_cb(inst->conf, kafkaLogger);
 	#endif
+
+	/* Optional HTTP CONNECT proxy support --- */
+	if (inst->proxy != NULL) {
+		if (kpx_cfg_init(&inst->proxyCfg, (const char *)inst->proxy,
+				(const char *)inst->proxyCredentials) != 0) {
+		if (inst->bReportErrs) {
+			LogError(0, RS_RET_PARAM_ERROR,
+				"imkafka: invalid proxy parameter '%s' "
+				"(expected \"host:port\" or \"http://host:port\")",
+				inst->proxy);
+		}
+		ABORT_FINALIZE(RS_RET_PARAM_ERROR);
+		}
+		rd_kafka_conf_set_opaque(inst->conf, &inst->proxyCfg);
+		rd_kafka_conf_set_connect_cb(inst->conf, kpx_connect_cb);
+		DBGPRINTF("imkafka: proxy enabled: %s:%s\n", inst->proxyCfg.host, inst->proxyCfg.port);
+	}
 
 	/* Create Kafka Consumer */
 	inst->rk = rd_kafka_new(RD_KAFKA_CONSUMER, inst->conf,
@@ -579,6 +605,10 @@ CODESTARTnewInpInst
 			} else {
 				inst->nMsgParsingFlags = NEEDS_PARSING;
 			}
+		} else if (!strcmp(inppblk.descr[i].name, "proxy")) {
+			inst->proxy = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
+		} else if (!strcmp(inppblk.descr[i].name, "proxy.credentials")) {
+			inst->proxyCredentials = (uchar *)es_str2cstr(pvals[i].val.d.estr, NULL);
 		} else {
 			dbgprintf("imkafka: program error, non-handled "
 			  "param '%s'\n", inppblk.descr[i].name);
@@ -693,6 +723,8 @@ CODESTARTfreeCnf
 			free((void*)inst->confParams[i].val);
 		}
 		free((void*)inst->confParams);
+		free(inst->proxy);
+		free(inst->proxyCredentials);
 		del = inst;
 		inst = inst->next;
 		free(del);
