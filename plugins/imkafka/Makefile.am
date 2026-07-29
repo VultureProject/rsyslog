@@ -5,7 +5,7 @@ imkafka_la_SOURCES = dummy.c
 imkafka_la_LDFLAGS = -module -avoid-version
 imkafka_la_CPPFLAGS = -I$(top_srcdir) $(RSRT_CFLAGS) $(PTHREADS_CFLAGS) -D MODNAME=imkafka
 else
-imkafka_la_SOURCES = imkafka.c
+imkafka_la_SOURCES = imkafka.c imkafka_proxy.h
 if ENABLE_KAFKA_STATIC
 imkafka_la_LDFLAGS = -module -avoid-version -Wl,--whole-archive -l:librdkafka-static.a -Wl,--no-whole-archive -ldl -lresolv -lcurl -lssl -lpthread -lcrypto -lsasl2 -lz -llz4 -lrt -lm
 else
